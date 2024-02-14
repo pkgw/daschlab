@@ -14,6 +14,8 @@ from astropy import units as u
 import numpy as np
 import requests
 
+from .series import SERIES, SeriesKind
+
 __all__ = ["Plates"]
 
 
@@ -51,12 +53,26 @@ _COLTYPES = {
 
 
 class Plates(Table):
-    def series_info(self):
+    def only_narrow(self) -> "Plates":
+        mask = [SERIES[k].kind == SeriesKind.NARROW for k in self["series"]]
+        return self[mask]
+
+    def series_info(self) -> Table:
         g = self.group_by("series")
 
         t = Table()
         t["series"] = [t[0] for t in g.groups.keys]
         t["count"] = np.diff(g.groups.indices)
+        t["kind"] = [SERIES[t[0]].kind for t in g.groups.keys]
+        t["plate_scale"] = (
+            np.array([SERIES[t[0]].plate_scale for t in g.groups.keys])
+            * u.arcsec
+            / u.mm
+        )
+        t["aperture"] = np.array([SERIES[t[0]].aperture for t in g.groups.keys]) * u.m
+        t["description"] = [SERIES[t[0]].description for t in g.groups.keys]
+
+        t.sort(["count"], reverse=True)
 
         return t
 
