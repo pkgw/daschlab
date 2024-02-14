@@ -76,6 +76,28 @@ class Plates(Table):
 
         return t
 
+    def time_coverage(self):
+        from matplotlib import pyplot as plt
+        from scipy.stats import gaussian_kde
+
+        plot_years = np.linspace(1875, 1995, 200)
+        plate_years = self["obs_date"].jyear
+
+        kde = gaussian_kde(plate_years, bw_method="scott")
+        plate_years_smoothed = kde(plot_years)
+
+        # try to get the normalization right: integral of the
+        # curve is equal to the number of plates, so that the
+        # Y axis is plates per year.
+
+        integral = plate_years_smoothed.sum() * (plot_years[1] - plot_years[0])
+        plate_years_smoothed *= len(self) / integral
+
+        line2ds = plt.plot(plot_years, plate_years_smoothed)
+        plt.ylabel("Plates per year (smoothed)")
+        plt.xlabel("Year")
+        return line2ds  # is this right/useful?
+
 
 def _query_plates(
     center: SkyCoord,

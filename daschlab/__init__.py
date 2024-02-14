@@ -160,11 +160,13 @@ class Session:
         """Generate a path within this session."""
         return self._root.joinpath(*pieces)
 
-    def target_by_name(self, name: str) -> "Session":
+    def select_target(self, name: str = None) -> "Session":
         """
         Specify the center of the session's target area, by resolving a source
         name with Simbad/Sesame.
         """
+        if not name:
+            raise ValueError("`name` must be specified")
 
         if self._query is not None:
             if not self._query.name:
@@ -191,7 +193,7 @@ class Session:
         )
         return self
 
-    def refcat(self, name: str) -> "Session":
+    def select_refcat(self, name: str) -> "Session":
         """
         Specify which DASCH reference catalog to use.
         """
@@ -226,13 +228,18 @@ class Session:
         )
         return self
 
-    def plates(self) -> "Plates":
+    def refcat(self) -> RefcatSources:
+        if self._refcat is None:
+            raise InteractiveError("you must select the refcat first - run something like `sess.select_refcat('apass')`")
+        return self._refcat
+
+    def plates(self) -> Plates:
         """
         Ensure that we have a list of plates relevant to this session.
         """
 
         if self._plates is not None:
-            return self
+            return self._plates
 
         # First-time invocation; query the database
 
@@ -250,7 +257,7 @@ class Session:
         self._info(
             f"- Saved `plates.ecsv` ({len(self._plates)} relevant plates)"
         )
-        return self
+        return self._plates
 
 
 def open_session(

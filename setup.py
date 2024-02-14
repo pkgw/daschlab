@@ -21,9 +21,11 @@ setup_args = dict(
     install_requires=[
         "astropy>=6.0",
         "dataclasses-json>=0.6",
+        "matplotlib>=3.8",
         "numpy>=1.20",
         "pywwt>=0.23",
         "requests>=2",
+        "scipy>=1.12",
     ],
 )
 
