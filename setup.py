@@ -19,7 +19,11 @@ setup_args = dict(
     license="MIT",
     include_package_data=True,
     install_requires=[
+        "astropy>=6.0",
+        "dataclasses-json>=0.6",
+        "numpy>=1.20",
         "pywwt>=0.23",
+        "requests>=2",
     ],
 )
 
