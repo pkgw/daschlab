@@ -171,4 +171,6 @@ def _query_plates(
 
     table.sort(["obs_date"])
 
+    table["local_id"] = np.arange(len(table))
+
     return table

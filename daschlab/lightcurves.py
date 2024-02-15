@@ -5,6 +5,7 @@
 Lightcurves
 """
 
+from copy import copy
 from enum import Enum
 from urllib.parse import urlencode
 
@@ -174,7 +175,11 @@ class Lightcurve(Table):
     - `magcal_magdep` is preferred calibrated phot measurement
     """
 
-    pass
+    def without_nondetections(self) -> "Lightcurve":
+        new = copy(self)
+        keep = (~new["magcal_magdep"].mask).nonzero()
+        new = new[keep]
+        return new
 
 
 def _query_lc(
@@ -253,7 +258,15 @@ def _postproc_lc(input_cols) -> Lightcurve:
         extra_mask = mask | (a == flagval)
         return Masked(u.Quantity(a, unit), extra_mask)
 
-    # Astrometry: calibrated
+    # Columns are displayed in the order that they're added to the table,
+    # so we try to register the most important ones first.
+
+    # this will be filled in for real at the end:
+    table["local_id"] = np.zeros(len(gsc_bin_index))
+    table["date"] = Time(input_cols["Date"], format="jd")
+    table["magcal_magdep"] = mq("magcal_magdep", np.float32, u.mag)
+    table["magcal_magdep_rms"] = extra_mq("magcal_magdep_rms", np.float32, u.mag, 99.0)
+    table["limiting_mag_local"] = all_q("limiting_mag_local", np.float32, u.mag)
 
     # This appears to be the least-bad way to mask SkyCoords right now.
     # Cf. https://github.com/astropy/astropy/issues/13041
@@ -266,7 +279,21 @@ def _postproc_lc(input_cols) -> Lightcurve:
         frame="icrs",
     )
 
-    table["gsc_bin_index"] = mc("gsc_bin_index", np.uint32)
+    table["fwhm_world"] = mq("FWHM_WORLD", np.float32, u.deg)
+    table["ellipticity"] = mc("ELLIPTICITY", np.float32)
+    table["theta_j2000"] = mq("THETA_J2000", np.float32, u.deg)
+    table["iso_area_world"] = mq("ISOAREA_WORLD", np.float32, u.deg**2)
+
+    table["aflags"] = mc("AFLAGS", np.uint32)
+    table["bflags"] = mc("BFLAGS", np.uint32)
+    table["plate_quality_flag"] = all_c("quality", np.uint32)
+    table["local_bin_reject_flag"] = mc("rejectFlag", np.uint32)
+
+    table["series"] = input_cols["series"]
+    table["platenum"] = all_c("plateNumber", np.uint32)
+    table["mosnum"] = all_c("mosaicNumber", np.uint8)
+    table["solnum"] = all_c("solutionNumber", np.uint8)
+    table["expnum"] = all_c("exposureNumber", np.uint8)
 
     # Astrometry: image-level
 
@@ -279,12 +306,9 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["magcal_iso_rms"] = mq("magcal_iso_rms", np.float32, u.mag)
     table["magcal_local"] = mq("magcal_local", np.float32, u.mag)
     table["magcal_local_rms"] = mq("magcal_local_rms", np.float32, u.mag)
-    table["limiting_mag_local"] = all_q("limiting_mag_local", np.float32, u.mag)
     table["magcal_local_error"] = extra_mq(
         "magcal_local_error", np.float32, u.mag, 99.0
     )
-    table["magcal_magdep"] = mq("magcal_magdep", np.float32, u.mag)
-    table["magcal_magdep_rms"] = extra_mq("magcal_magdep_rms", np.float32, u.mag, 99.0)
 
     # Photometry: calibration/quality information
 
@@ -292,14 +316,10 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["extinction"] = mq("extinction", np.float32, u.mag)
     table["magcor_local"] = extra_mq("magcor_local", np.float32, u.mag, 0.0)
     table["blended_mag"] = extra_mq("Blendedmag", np.float32, u.mag, 0.0)
-    table["aflags"] = mc("AFLAGS", np.uint32)
-    table["bflags"] = mc("BFLAGS", np.uint32)
     table["a2flags"] = mc("A2FLAGS", np.uint32)
     table["b2flags"] = mc("B2FLAGS", np.uint32)
     table["npoints_local"] = mc("npoints_local", np.uint32)
-    table["local_bin_reject_flag"] = mc("rejectFlag", np.uint32)
     table["local_bin_index"] = mc("local_bin_index", np.uint16)
-    table["plate_quality_flag"] = all_c("quality", np.uint32)
     table["spatial_bin"] = mc("spatial_bin", np.uint16)
     table["magdep_bin"] = mc("magdep_bin", np.uint16)
 
@@ -311,13 +331,6 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["flux_iso"] = mc("FLUX_ISO", np.float32)
     table["background"] = mc("BACKGROUND", np.float32)
     table["flux_max"] = mc("FLUX_MAX", np.float32)
-
-    # Morphology: calibrated
-
-    table["theta_j2000"] = mq("THETA_J2000", np.float32, u.deg)
-    table["ellipticity"] = mc("ELLIPTICITY", np.float32)
-    table["iso_area_world"] = mq("ISOAREA_WORLD", np.float32, u.deg**2)
-    table["fwhm_world"] = mq("FWHM_WORLD", np.float32, u.deg)
 
     # Morphology: image-level
 
@@ -335,7 +348,6 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
     # Timing
 
-    table["date"] = Time(input_cols["Date"], format="jd")
     table["time_accuracy"] = mq("timeAccuracy", np.float32, u.day)
 
     # Information about the associated catalog source
@@ -347,17 +359,16 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
     # Information about the associated plate
 
-    table["series"] = input_cols["series"]
     table["series_id"] = all_c("seriesId", np.uint8)
-    table["platenum"] = all_c("plateNumber", np.uint32)
-    table["expnum"] = all_c("exposureNumber", np.uint8)
-    table["solnum"] = all_c("solutionNumber", np.uint8)
-    table["mosnum"] = all_c("mosaicNumber", np.uint8)
     table["plate_dist"] = mq("plate_dist", np.float32, u.deg)
 
     # SExtractor supporting info
 
     table["sxt_number"] = mc("NUMBER", np.uint32)
+
+    # This depends on the dec, and could vary over time with the right proper motion
+
+    table["gsc_bin_index"] = mc("gsc_bin_index", np.uint32)
 
     # DASCH supporting info
 
@@ -366,5 +377,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["dasch_mask_index"] = all_c("maskIndex", np.uint8)
 
     table.sort(["date"])
+
+    table["local_id"] = np.arange(len(table))
 
     return table

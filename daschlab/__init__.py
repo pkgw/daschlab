@@ -15,6 +15,7 @@ from typing import Dict, FrozenSet, Iterable, Optional
 
 from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
+from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
 from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
@@ -72,6 +73,7 @@ class Session:
     _query: Optional[SessionQuery] = None
     _refcat: Optional[RefcatSources] = None
     _plates: Optional[Plates] = None
+    _wwt: Optional[WWTJupyterWidget] = None
     _lc_cache: Dict[str, Lightcurve] = None
 
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
@@ -93,7 +95,7 @@ class Session:
         except FileNotFoundError:
             self._query = None
             self._info(
-                "- Query target not yet defined - run something like `sess.target_by_name('HD 209458')`"
+                f"- Query target not yet defined - run something like `{self._my_var_name()}.target_by_name('HD 209458')`"
             )
         else:
             self._query = SessionQuery.schema().load(json.load(f_query))
@@ -115,7 +117,7 @@ class Session:
 
             if self._query is not None:
                 self._info(
-                    "- Refcat not yet fetched - run something like `sess.refcat('apass')`"
+                   f"- Refcat not yet fetched - run something like `{self._my_var_name()}.refcat('apass')`"
                 )
         else:
             if len(self._refcat):
@@ -132,10 +134,17 @@ class Session:
 
             if self._query is not None:
                 self._info(
-                    "- Plates not yet fetched - run something like `sess.plates()`"
+                    f"- Plates not yet fetched - run something like `{self._my_var_name()}.plates()`"
                 )
         else:
             self._info(f"- Plates: {len(self._plates)} relevant plates")
+
+    def _my_var_name(self) -> str:
+        for name, value in globals().items():
+            if value is self:
+                return name
+
+        return "sess"
 
     def _info(self, msg: str):
         # TODO: use logging or something if not interactive
@@ -218,7 +227,7 @@ class Session:
 
         if self._query is None:
             raise InteractiveError(
-                f"cannot retrieve refcat before setting target - run something like `sess.target_by_name('HD 209458')`"
+                f"cannot retrieve refcat before setting target - run something like `{self._my_var_name()}.target_by_name('HD 209458')`"
             )
 
         print("- Querying API ...", flush=True)
@@ -235,7 +244,7 @@ class Session:
 
     def refcat(self) -> RefcatSources:
         if self._refcat is None:
-            raise InteractiveError("you must select the refcat first - run something like `sess.select_refcat('apass')`")
+            raise InteractiveError(f"you must select the refcat first - run something like `{self._my_var_name()}.select_refcat('apass')`")
         return self._refcat
 
     def plates(self) -> Plates:
@@ -250,7 +259,7 @@ class Session:
 
         if self._query is None:
             raise InteractiveError(
-                f"cannot retrieve plates before setting target - run something like `sess.target_by_name('HD 209458')`"
+                f"cannot retrieve plates before setting target - run something like `{self._my_var_name()}.target_by_name('HD 209458')`"
             )
 
         print("- Querying API ...", flush=True)
@@ -293,6 +302,24 @@ class Session:
             f"- Saved `{p}` ({len(lc)} relevant rows)"
         )
         return lc
+
+    async def connect_to_wwt(self):
+        if self._wwt is not None:
+            return
+
+        self._wwt = await connect_to_app().becomes_ready()
+        self._wwt.foreground_opacity = 0
+        
+        if self._query is not None:
+            self._wwt.center_on_coordinates(self._query.pos_as_skycoord(), fov=REFCAT_RADIUS * 1.2)
+
+    def wwt(self) -> WWTJupyterWidget:
+        if self._wwt is None:
+            raise InteractiveError(
+                f"you must connect to WWT asynchronously first - run `await {self._my_var_name()}.connect_to_wwt()`"
+            )
+
+        return self._wwt
 
 
 def open_session(

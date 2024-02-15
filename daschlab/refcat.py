@@ -5,6 +5,7 @@
 Data extracted from one of the DASCH reference catalogs in the query region.
 """
 
+from typing import Optional
 from urllib.parse import urlencode
 
 from astropy.coordinates import Angle, SkyCoord
@@ -13,7 +14,7 @@ from astropy.time import Time
 from astropy import units as u
 import numpy as np
 import requests
-
+from pywwt.layers import TableLayer
 
 __all__ = ["RefcatSources"]
 
@@ -48,7 +49,20 @@ class RefcatSourceRow(Row):
 
 class RefcatSources(Table):
     _sess: "daschlab.Session" = None
+    _layer: Optional[TableLayer] = None
     Row = RefcatSourceRow
+
+    def show(self) -> TableLayer:
+        if self._layer is not None:
+            return self._layer
+
+        wwt = self._sess.wwt()
+        tl = wwt.layers.add_table_layer(self)
+        self._layer = tl
+
+        tl.size_scale = 20
+        tl.marker_type = "circle"
+        return tl
 
 
 def _query_refcat(
@@ -131,73 +145,6 @@ def _query_refcat(
     table.sort(["_distsq"])
     del table["_distsq"]
 
+    table["local_id"] = np.arange(len(table))
+
     return table
-
-
-def _query_refcat_localcmd(
-    sess: "Session",
-    name: str,
-    center: SkyCoord,
-    radius: u.Quantity,
-) -> RefcatSources:
-    import subprocess
-
-    radius = Angle(radius)
-
-    if not sess._internal_simg:
-        raise Exception("non-internal query not implemented!")
-
-    # Internal-mode query
-
-    catpath = f"/n/boslfs02/LABS/dasch_project/library/other_catalogs/{name}.dat"
-
-    argv = [
-        "singularity",
-        "exec",
-        sess._internal_simg,
-        "stdbuf",
-        "-eL",
-        "-oL",
-        "dasch-querycat",
-        "-c",
-        catpath,
-        "-r",
-        str(radius.arcsec),
-        "-e",
-        f"{center.ra.deg} {center.dec.deg}",
-    ]
-
-    colnames = None
-    coltypes = None
-    coldata = None
-    saw_sep = False
-
-    proc = subprocess.Popen(
-        argv,
-        shell=False,
-        stdout=subprocess.PIPE,
-        stdin=subprocess.DEVNULL,
-        close_fds=True,
-        text=True,
-    )
-
-    for line in proc.stdout:
-        pieces = line.rstrip().split("\t")
-
-        if colnames is None:
-            colnames = pieces
-            coltypes = [_COLTYPES.get(c) for c in colnames]
-            coldata = [[] if t is not None else None for t in coltypes]
-        elif not saw_sep:
-            saw_sep = True
-        else:
-            for row, ctype, cdata in zip(pieces, coltypes, coldata):
-                if ctype is not None:
-                    cdata.append(ctype(row))
-
-    retcode = proc.wait()
-
-    if retcode != 0:
-        raise Exception(f"querycat command returned unexpected exit code {retcode}")
-
-    # postprocessing goes here ...
