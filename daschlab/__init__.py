@@ -11,14 +11,15 @@ import os
 import pathlib
 import sys
 import tempfile
-from typing import FrozenSet, Iterable, Optional
+from typing import Dict, FrozenSet, Iterable, Optional
 
 from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
 
 from .query import SessionQuery
-from .refcat import RefcatSources, _query_refcat
+from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
 from .plates import Plates, _query_plates
+from .lightcurves import Lightcurve, _query_lc
 
 __all__ = [
     "SUPPORTED_REFCATS",
@@ -71,11 +72,13 @@ class Session:
     _query: Optional[SessionQuery] = None
     _refcat: Optional[RefcatSources] = None
     _plates: Optional[Plates] = None
+    _lc_cache: Dict[str, Lightcurve] = None
 
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
         self._root = pathlib.Path(root)
         self._interactive = interactive
         self._internal_simg = _internal_simg
+        self._lc_cache = {}
 
         try:
             self._root.mkdir(parents=True)
@@ -106,6 +109,7 @@ class Session:
 
         try:
             self._refcat = RefcatSources.read(str(self.path("refcat.ecsv")), format="ascii.ecsv")
+            self._refcat._sess = self
         except FileNotFoundError:
             self._refcat = None
 
@@ -219,6 +223,7 @@ class Session:
 
         print("- Querying API ...", flush=True)
         self._refcat = _query_refcat(name, self._query.pos_as_skycoord(), REFCAT_RADIUS)
+        self._refcat._sess = self
 
         with self._save_atomic("refcat.ecsv") as f_new:
             self._refcat.write(f_new.name, format="ascii.ecsv", overwrite=True)
@@ -258,6 +263,36 @@ class Session:
             f"- Saved `plates.ecsv` ({len(self._plates)} relevant plates)"
         )
         return self._plates
+
+    def lightcurve(self, src: RefcatSourceRow):
+        name = src["ref_text"]
+        lc = self._lc_cache.get(name)
+        if lc is not None:
+            return lc
+
+        p = self.path("lightcurves") / f"{name}.ecsv"
+
+        try:
+            lc = Lightcurve.read(str(p), format="ascii.ecsv")
+            self._lc_cache[name] = lc
+            return lc
+        except FileNotFoundError:
+            pass
+
+        # We need to fetch it
+
+        self.path("lightcurves").mkdir(exist_ok=True)
+
+        print("- Querying API ...", flush=True)
+        lc = _query_lc(src["refcat"], name, src["gsc_bin_index"])
+
+        with self._save_atomic(p) as f_new:
+            lc.write(f_new.name, format="ascii.ecsv", overwrite=True)
+
+        self._info(
+            f"- Saved `{p}` ({len(lc)} relevant rows)"
+        )
+        return lc
 
 
 def open_session(

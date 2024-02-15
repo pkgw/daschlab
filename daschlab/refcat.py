@@ -8,7 +8,7 @@ Data extracted from one of the DASCH reference catalogs in the query region.
 from urllib.parse import urlencode
 
 from astropy.coordinates import Angle, SkyCoord
-from astropy.table import Table
+from astropy.table import Row, Table
 from astropy.time import Time
 from astropy import units as u
 import numpy as np
@@ -41,8 +41,14 @@ _COLTYPES = {
 }
 
 
+class RefcatSourceRow(Row):
+    def lightcurve(self) -> "daschlab.Lightcurve":
+        return self._table._sess.lightcurve(self)
+
+
 class RefcatSources(Table):
-    pass
+    _sess: "daschlab.Session" = None
+    Row = RefcatSourceRow
 
 
 def _query_refcat(
