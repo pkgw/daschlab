@@ -22,7 +22,6 @@ setup_args = dict(
         "astropy>=6.0",
         "bokeh>=3.3",
         "dataclasses-json>=0.6",
-        "matplotlib>=3.8",
         "numpy>=1.20",
         "pywwt>=0.23",
         "reproject>=0.13",

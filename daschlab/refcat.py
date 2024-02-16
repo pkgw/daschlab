@@ -71,8 +71,11 @@ class RefcatSources(Table):
         tl = wwt.layers.add_table_layer(compat_table)
         self._layer = tl
 
-        tl.size_scale = 20
         tl.marker_type = "circle"
+        tl.size_att = "stdmag"
+        tl.size_vmin = compat_table["stdmag"].max()
+        tl.size_vmax = compat_table["stdmag"].min()
+        tl.size_scale = 10.0
         return tl
 
 

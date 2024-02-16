@@ -56,7 +56,7 @@ def _maybe_install_custom_exception_formatter():
     try:
         ip = get_ipython()
     except NameError:
-        pass
+        return
 
     ip.set_custom_exc((InteractiveError,), _ipython_custom_exception_formatter)
 
@@ -212,7 +212,7 @@ class Session:
             print(file=f_new)  # `json` doesn't do a trailing newline
 
         self._info(
-            f"- Saved `query.json` with name `{name}` resolved to: {_formatsc(q.pos_as_skycoord())}"
+            f"- Saved `query.json` with name `{name}` resolved to: {_formatsc(self._query.pos_as_skycoord())}"
         )
         return self
 

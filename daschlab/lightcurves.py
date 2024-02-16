@@ -6,11 +6,11 @@ Lightcurves
 """
 
 from copy import copy
-from enum import Enum
+from enum import IntFlag
 from urllib.parse import urlencode
 
 from astropy.coordinates import SkyCoord
-from astropy.table import Table
+from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
 from astropy.utils.masked import Masked
@@ -18,7 +18,14 @@ from bokeh.plotting import figure, show
 import numpy as np
 import requests
 
-__all__ = ["AFlags", "BFlags", "Lightcurve", "LocalBinRejectFlags", "PlateQualityFlags"]
+__all__ = [
+    "AFlags",
+    "BFlags",
+    "Lightcurve",
+    "LightcurvePoint",
+    "LocalBinRejectFlags",
+    "PlateQualityFlags",
+]
 
 
 _API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/querylc.php"
@@ -94,8 +101,8 @@ _COLTYPES = {
 }
 
 
-class AFlags(Enum):
-    HIGH_BACKGROUND = 1 << 6
+class AFlags(IntFlag):
+    HIGH_BACKGROUND = 1 << 6  # NB, this is "bit 7" since we count them 1-based
     BAD_PLATE_QUALITY = 1 << 7
     MULT_EXP_UNMATCHED = 1 << 8
     UNCERTAIN_DATE = 1 << 9
@@ -105,6 +112,7 @@ class AFlags(Enum):
     CLOSE_TO_LIMITING = 1 << 13
     RADIAL_BIN_9 = 1 << 14
     BIN_DRAD_UNKNOWN = 1 << 15
+    UNCERTAIN_CATALOG_MAG = 1 << 19
     CASE_B_BLEND = 1 << 20
     CASE_C_BLEND = 1 << 21
     CASE_BC_BLEND = 1 << 22
@@ -118,7 +126,42 @@ class AFlags(Enum):
     LOW_ALTITUDE = 1 << 30
 
 
-class BFlags(Enum):
+_AFLAG_DESCRIPTIONS = [
+    "(bit 1 unused)",
+    "(bit 2 unused)",
+    "(bit 3 unused)",
+    "(bit 4 unused)",
+    "(bit 5 unused)",
+    "(bit 6 unused)",
+    "High SExtractor background level at object position",
+    "Plate fails general quality checks",
+    "Object is unmatched and this is a multiple-exposure plate",
+    "Observation time is too uncertain to calculate extinction accurately",
+    "Object is a blend and this is a multiple-exposure plate",
+    "SExtractor isophotonic RMS is suspiciously large",
+    "Local-binning RMS is suspiciously large",
+    "Object brightness is too close to the local limiting magnitude",
+    "Object is in radial bin 9 (close to the plate edge)",
+    "Object's spatial bin has unmeasured `drad`",
+    "(bit 17 unused)",
+    "(bit 18 unused)",
+    "(bit 19 unused)",
+    "Magnitude of the catalog source is uncertain/variable",
+    '"Case B" blend - multiple catalog entries for one imaged star',
+    '"Case C" blend - mutiple imaged stars for one catalog entry',
+    '"Case B/C" blend  - multiple catalog entries and imaged stars all mixed up',
+    "Object `drad` is large relative to its bin, or its spatial or local bin is bad",
+    "Object is a Pickering Wedge image",
+    "Object is a suspected plate defect",
+    "SExtractor flags the object as a blend",
+    "Rejected blended object",
+    "Smoothing correction is suspiciously large",
+    "Object is too bright for accurate calibration",
+    "Low altitude - object is within 23.5 deg of the horizon",
+]
+
+
+class BFlags(IntFlag):
     NEIGHBORS = 1 << 0
     BLEND = 1 << 1
     SATURATED = 1 << 2
@@ -146,13 +189,55 @@ class BFlags(Enum):
     PROMO_APPLIED = 1 << 30
 
 
-class LocalBinRejectFlags(Enum):
+_BFLAG_DESCRIPTIONS = [
+    "Object has nearby neighbors",
+    "Object was blended with another",
+    "At least one image pixel was saturated",
+    "Object is too close to the image boundary",
+    "Object aperture data incomplete or corrupt",
+    "Object isophotal data incomplete or corrupt",
+    "Memory overflow during deblending",
+    "Memory overflow during extraction",
+    "Magnitude corrected for blend",
+    "Object `drad` is low, but its bin `drad` is large",
+    "Object PSF considered saturated",
+    "Magnitude-dependent calibration has been applied",
+    "(bit 12 unused)",
+    "(bit 13 unused)",
+    "(bit 14 unused)",
+    "(bit 15 unused)",
+    "Appears to be a good star",
+    "Lowess calibration has been applied",
+    "Local calibration has been applied",
+    "Extinction calibration has been applied",
+    "Object is too bright to calibrate",
+    "Color correction has been applied",
+    "Color correction used the Metropolis algorithm",
+    "(bit 23 unused)",
+    "Object was only matched to catalog at the end of the pipeline",
+    "Object has high proper motion uncertainty",
+    "(bit 26 unused)",
+    "Spatial bin color-term calibration fails quality check",
+    "RA/Dec have been adjusted by bin medians",
+    "Plate date is uncertain",
+    "Catalog position has been corrected for proper motion",
+]
+
+
+class LocalBinRejectFlags(IntFlag):
     LARGE_CORRECTION = 1 << 0
     TOO_DIM = 1 << 1
     LARGE_DRAD = 1 << 2
 
 
-class PlateQualityFlags(Enum):
+_LOCAL_BIN_REJECT_FLAG_DESCRIPTIONS = [
+    "Local correction is out of range",
+    "Median brightness is below the limiting magnitude",
+    "Majority of stars have a high `drad`",
+]
+
+
+class PlateQualityFlags(IntFlag):
     MULTIPLE_EXPOSURE = 1 << 0
     GRATING = 1 << 1
     COLORED_FILTER = 1 << 2
@@ -168,13 +253,71 @@ class PlateQualityFlags(Enum):
     TRAILED = 1 << 12
 
 
+_PLATE_QUALITY_FLAG_DESCRIPTIONS = [
+    "Multiple-exposure plate",
+    "Grating plate",
+    "Color-filter plate",
+    "Image fails colorterm limits",
+    "Pickering Wedge plate",
+    "Spectrum plate",
+    "Saturated images",
+    "Magnitude-dependent calibration unavailable",
+    "Patrol-telescope plate",
+    "Narrow-field-telescope plate",
+    "(plotter shows limiting magnitudes)",
+    "(plotter shows nondetections)",
+    "Image is trailed -- ellipticity > 0.6",
+]
+
+
+def _report_flags(desc, observed, enumtype, descriptions):
+    print(f"{desc}: 0x{observed:08X}")
+
+    if not observed:
+        return
+
+    accum = 0
+
+    for iflag in enumtype:
+        if observed & iflag.value:
+            bit = int(np.log2(iflag.value)) + 1
+            print(f"  bit {bit:2d}: {iflag.name:32} - {descriptions[bit - 1]}")
+            accum |= iflag.value
+
+    if accum != observed:
+        print(f"  !! unexpected leftover bits: {observed & ~accum:08X}")
+
+
+class LightcurvePoint(Row):
+    def flags(self):
+        _report_flags("AFLAGS", self["aflags"], AFlags, _AFLAG_DESCRIPTIONS)
+        _report_flags("BFLAGS", self["bflags"], BFlags, _BFLAG_DESCRIPTIONS)
+        _report_flags(
+            "LocalBinReject",
+            self["local_bin_reject_flag"],
+            LocalBinRejectFlags,
+            _LOCAL_BIN_REJECT_FLAG_DESCRIPTIONS,
+        )
+        _report_flags(
+            "PlateQuality",
+            self["plate_quality_flag"],
+            PlateQualityFlags,
+            _PLATE_QUALITY_FLAG_DESCRIPTIONS,
+        )
+
+
 class Lightcurve(Table):
     """
     Cheat sheet:
 
     - `date` is HJD midpoint
     - `magcal_magdep` is preferred calibrated phot measurement
+    - legacy plotter error bar is `magcal_local_rms` * `error_bar_factor`
+      which is set to match the error bars to the empirical RMS, if this
+      would shrink the error bars
     """
+
+    Row = LightcurvePoint
 
     def _copy_subset(self, keep, verbose: bool) -> "Lightcurve":
         new = copy(self)
@@ -191,11 +334,15 @@ class Lightcurve(Table):
         return self._copy_subset(keep, verbose)
 
     def without_large_separations(
-        self, sep: u.Quantity = 20 * u.arcsec, verbose=True
+        self, sep: u.Quantity = 20 * u.arcsec, verbose: bool = True
     ) -> "Lightcurve":
         mp = self.mean_pos()
         seps = mp.separation(self["pos"])
         keep = seps < sep
+        return self._copy_subset(keep, verbose)
+
+    def without_aflags(self, aflags: int, verbose: bool = True) -> "Lightcurve":
+        keep = (self["aflags"] & aflags) == 0
         return self._copy_subset(keep, verbose)
 
     def summary(self):

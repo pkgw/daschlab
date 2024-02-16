@@ -12,6 +12,7 @@ from astropy.coordinates import Angle, SkyCoord
 from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
+from bokeh.plotting import figure, show
 import numpy as np
 from pywwt.layers import ImageLayer
 import requests
@@ -90,8 +91,7 @@ class Plates(Table):
 
         return t
 
-    def time_coverage(self):
-        from matplotlib import pyplot as plt
+    def time_coverage(self) -> figure:
         from scipy.stats import gaussian_kde
 
         plot_years = np.linspace(1875, 1995, 200)
@@ -107,10 +107,13 @@ class Plates(Table):
         integral = plate_years_smoothed.sum() * (plot_years[1] - plot_years[0])
         plate_years_smoothed *= len(self) / integral
 
-        line2ds = plt.plot(plot_years, plate_years_smoothed)
-        plt.ylabel("Plates per year (smoothed)")
-        plt.xlabel("Year")
-        return line2ds  # is this right/useful?
+        p = figure(
+            x_axis_label="Year",
+            y_axis_label="Plates per year (smoothed)",
+        )
+        p.line(plot_years, plate_years_smoothed)
+        show(p)
+        return p
 
     def find(self, series: str, platenum: int, mosnum: int) -> "Plates":
         keep = (
