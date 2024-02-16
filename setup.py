@@ -24,6 +24,7 @@ setup_args = dict(
         "matplotlib>=3.8",
         "numpy>=1.20",
         "pywwt>=0.23",
+        "reproject>=0.13",
         "requests>=2",
         "scipy>=1.12",
     ],

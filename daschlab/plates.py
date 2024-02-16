@@ -5,18 +5,21 @@
 Lists of plates.
 """
 
+from typing import Dict
 from urllib.parse import urlencode
 
 from astropy.coordinates import Angle, SkyCoord
-from astropy.table import Table
+from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
 import numpy as np
+from pywwt.layers import ImageLayer
 import requests
 
+from . import InteractiveError
 from .series import SERIES, SeriesKind
 
-__all__ = ["Plates"]
+__all__ = ["Plates", "PlateRow"]
 
 
 _API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/queryplates.php"
@@ -52,7 +55,19 @@ _COLTYPES = {
 }
 
 
+class PlateRow(Row):
+    def show(self) -> ImageLayer:
+        return self._table.show(self)
+
+    def plate_id(self) -> str:
+        return f"{self['series']}{self['platenum']:05d}_{self['mosnum']:02d}"
+
+
 class Plates(Table):
+    _sess: "daschlab.Session" = None
+    _layers: Dict[int, ImageLayer] = None
+    Row = PlateRow
+
     def only_narrow(self) -> "Plates":
         mask = [SERIES[k].kind == SeriesKind.NARROW for k in self["series"]]
         return self[mask]
@@ -97,6 +112,34 @@ class Plates(Table):
         plt.ylabel("Plates per year (smoothed)")
         plt.xlabel("Year")
         return line2ds  # is this right/useful?
+
+    def find(self, series: str, platenum: int, mosnum: int) -> Plates:
+        keep = (
+            (self["series"] == series)
+            & (self["platenum"] == platenum)
+            & (self["mosnum"] == mosnum)
+        )
+        return self[keep]
+
+    def show(self, plate: PlateRow) -> ImageLayer:
+        if self._layers is None:
+            self._layers = {}
+
+        local_id = plate["local_id"]
+        il = self._layers.get(local_id)
+
+        if il is not None:
+            return il  # TODO: bring it to the top, etc?
+
+        fits_path = self._sess.cutout(plate)
+        if fits_path is None:
+            raise InteractiveError(
+                f"cannot create a cutout for plate #{local_id:05d} ({plate.plate_id()})"
+            )
+
+        il = self._sess.wwt().layers.add_image_layer(str(fits_path))
+        self._layers[local_id] = il
+        return il
 
 
 def _query_plates(

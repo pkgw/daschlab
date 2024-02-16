@@ -12,14 +12,16 @@ import pathlib
 import sys
 import tempfile
 from typing import Dict, FrozenSet, Iterable, Optional
+import warnings
 
 from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
+import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
 from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
-from .plates import Plates, _query_plates
+from .plates import Plates, PlateRow, _query_plates
 from .lightcurves import Lightcurve, _query_lc
 
 __all__ = [
@@ -33,9 +35,10 @@ __all__ = [
 SUPPORTED_REFCATS: FrozenSet[str] = frozenset(("apass", "atlas"))
 
 
-# The default cutout is a square with half-size 600 arcsec. In order to get ~all
-# catalog sources on the cutout, th radius should be the size of such a square's
-# diagonal.
+CUTOUT_HALFSIZE: Angle = Angle(600 * u.arcsec)
+
+# In order to get ~all catalog sources on a cutout, the radius should be the
+# size of such a square's diagonal.
 REFCAT_RADIUS: Angle = Angle(850 * u.arcsec)
 
 PLATES_RADIUS: Angle = Angle(10 * u.arcsec)
@@ -129,6 +132,7 @@ class Session:
 
         try:
             self._plates = Plates.read(str(self.path("plates.ecsv")), format="ascii.ecsv")
+            self._plates._sess = self
         except FileNotFoundError:
             self._plates = None
 
@@ -153,6 +157,12 @@ class Session:
     def _warn(self, msg: str):
         # TODO: use logging or something if not interactive
         print("warning:", msg, file=sys.stderr)
+
+    def _require_internal(self):
+        if self._internal_simg:
+            return
+
+        raise InteractiveError("sorry, this functionality requires a direct login to the DASCH HPC cluster")
 
     @contextmanager
     def _save_atomic(self, *relpath_pieces: Iterable[str], mode: str = "wt"):
@@ -205,6 +215,11 @@ class Session:
             f"- Saved `query.json` with name `{name}` resolved to: {_formatsc(q.pos_as_skycoord())}"
         )
         return self
+
+    def query(self) -> SessionQuery:
+        if self._query is None:
+            raise InteractiveError(f"you must select the target first - run something like `{self._my_var_name()}.select_target(name='Algol')`")
+        return self._query
 
     def select_refcat(self, name: str) -> "Session":
         """
@@ -264,6 +279,7 @@ class Session:
 
         print("- Querying API ...", flush=True)
         self._plates = _query_plates(self._query.pos_as_skycoord(), PLATES_RADIUS)
+        self._plates._sess = self
 
         with self._save_atomic("plates.ecsv") as f_new:
             self._plates.write(f_new.name, format="ascii.ecsv", overwrite=True)
@@ -273,7 +289,7 @@ class Session:
         )
         return self._plates
 
-    def lightcurve(self, src: RefcatSourceRow):
+    def lightcurve(self, src: RefcatSourceRow) -> Lightcurve:
         name = src["ref_text"]
         lc = self._lc_cache.get(name)
         if lc is not None:
@@ -303,13 +319,143 @@ class Session:
         )
         return lc
 
+    def cutout(self, plate: PlateRow) -> Optional[pathlib.Path]:
+        from astropy.io import fits
+        from astropy.wcs import WCS
+        from reproject import reproject_interp
+
+        self._require_internal()
+
+        local_id = plate["local_id"]
+        plate_id = f"{plate['series']}{plate['platenum']:05d}_{plate['mosnum']:02d}"
+        dest_path = self.path("cutouts", f"{local_id:05d}_{plate_id}.fits")
+
+        if dest_path.exists():
+            return dest_path
+
+        # We need to (try to) create it. Do we have a file we can work with?
+
+        buckets = [
+            ("/n/boslfs02/LABS/dasch_project/buckets/tnx.bucket/data", "tnx"),
+            ("/n/boslfs02/LABS/dasch_project/buckets/ww.bucket/data", "ww"),
+        ]
+
+        key1 = plate["platenum"] % 100
+        key2 = (plate["platenum"] // 100) % 100
+        tail = f"{key1:02d}/{key2:02d}/{plate_id}_full.fits"
+        src_path = None
+
+        for b, mtype in buckets:
+            p = pathlib.Path(b, tail)
+            if p.exists():
+                src_path = p
+                break
+
+        if src_path is None:
+            return None
+
+        # OK, let's do it
+
+        _WCS_SCALE = 0.0004
+
+        self.path("cutouts").mkdir(exist_ok=True)
+        print("- Computing ...", flush=True)
+
+        center = self.query().pos_as_skycoord()
+        halfsize_pix = CUTOUT_HALFSIZE.deg / _WCS_SCALE
+        halfsize_pix = max(int(round(halfsize_pix)), 1)
+        target_size = 2 * halfsize_pix + 1
+        target_wcs = WCS(
+            {
+                "CTYPE1": "RA---TAN",
+                "CTYPE2": "DEC--TAN",
+                "CUNIT1": "deg",
+                "CUNIT2": "deg",
+                "CRVAL1": center.ra.deg,
+                "CRVAL2": center.dec.deg,
+                "CD1_1": -_WCS_SCALE,
+                "CD2_2": _WCS_SCALE,
+                "CRPIX1": halfsize_pix + 1,
+                "CRPIX2": halfsize_pix + 1,
+            }
+        )
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+
+            with fits.open(str(src_path)) as hdul:
+                cutout = reproject_interp(
+                    hdul,
+                    target_wcs,
+                    shape_out=(target_size, target_size),
+                    return_footprint=False,
+                )
+                src_header = hdul[0].header
+
+            cutout = cutout.astype(np.uint16)
+
+        hdu = fits.PrimaryHDU()
+        hdu.data = cutout
+
+        for k in (
+            "S_STAND",
+            "S_TYPE",
+            "S_PCOMM",
+            "S_PCOMM1",
+            "S_PCOMM2",
+            "S_PCOMM3",
+            "S_OPER",
+            "S_EXPOSE",
+            "S_PTTRN",
+            "S_ZPOS",
+            "APERTURE",
+        ):
+            v = src_header.get(k)
+            if v is not None:
+                hdu.header[k] = v
+
+        hdu.header.update(target_wcs.to_header())
+
+        hdu.header["C_SERIES"] = plate["series"]
+        hdu.header["C_PLATE"] = plate["platenum"]
+        hdu.header["D_MOSNUM"] = plate["mosnum"]
+        hdu.header["D_ASTRTY"] = mtype
+        hdu.header["D_SCNNUM"] = plate["scannum"]
+        hdu.header["D_EXPNUM"] = plate["expnum"]
+        hdu.header["D_SOLNUM"] = plate["solnum"]
+        # the 'class' column is handled as a masked array and when we convert it
+        # to a row, the masked value seems to become a float64?
+        hdu.header["D_PCLASS"] = "" if plate["class"] is np.ma.masked else plate["class"]
+        hdu.header["D_ROTFLG"] = plate["rotation_deg"]
+        hdu.header["EXPTIME"] = plate["exptime"] * 60
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            hdu.header["DATE-OBS"] = plate["obs_date"].fits
+            hdu.header["MJD-OBS"] = plate["obs_date"].mjd
+
+        hdu.header["DATE-SCN"] = plate["scan_date"].unmasked.fits
+        hdu.header["MJD-SCN"] = plate["scan_date"].unmasked.mjd
+        hdu.header["DATE-MOS"] = plate["mos_date"].unmasked.fits
+        hdu.header["MJD-MOS"] = plate["mos_date"].unmasked.mjd
+
+        with self._save_atomic(dest_path) as f_new:
+            hdu.writeto(f_new.name, overwrite=True)
+
+        self._info(f"- Saved `{dest_path}`")
+        return dest_path
+
+
     async def connect_to_wwt(self):
         if self._wwt is not None:
             return
 
         self._wwt = await connect_to_app().becomes_ready()
-        self._wwt.foreground_opacity = 0
-        
+
+        if self._wwt.foreground_opacity != 0:
+            self._wwt.background = "Digitized Sky Survey (Color)"
+            self._wwt.foreground_opacity = 0
+
         if self._query is not None:
             self._wwt.center_on_coordinates(self._query.pos_as_skycoord(), fov=REFCAT_RADIUS * 1.2)
 

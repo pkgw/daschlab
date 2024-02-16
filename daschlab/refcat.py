@@ -5,6 +5,7 @@
 Data extracted from one of the DASCH reference catalogs in the query region.
 """
 
+from copy import copy
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -56,8 +57,17 @@ class RefcatSources(Table):
         if self._layer is not None:
             return self._layer
 
+        # TODO: pywwt can't handle Astropy tables that use a SkyCoord
+        # to hold positional information. That should be fixed, but it
+        # will take some time. In the meantime, hack around it.
+
+        compat_table = copy(self)
+        compat_table["ra"] = self["pos"].ra.deg
+        compat_table["dec"] = self["pos"].dec.deg
+        del compat_table["pos"]
+
         wwt = self._sess.wwt()
-        tl = wwt.layers.add_table_layer(self)
+        tl = wwt.layers.add_table_layer(compat_table)
         self._layer = tl
 
         tl.size_scale = 20
