@@ -98,7 +98,7 @@ class Session:
         except FileNotFoundError:
             self._query = None
             self._info(
-                f"- Query target not yet defined - run something like `{self._my_var_name()}.target_by_name('HD 209458')`"
+                f"- Query target not yet defined - run something like `{self._my_var_name()}.select_target(name='HD 209458')`"
             )
         else:
             self._query = SessionQuery.schema().load(json.load(f_query))
@@ -120,7 +120,7 @@ class Session:
 
             if self._query is not None:
                 self._info(
-                   f"- Refcat not yet fetched - run something like `{self._my_var_name()}.refcat('apass')`"
+                   f"- Refcat not yet fetched - run something like `{self._my_var_name()}.select_refcat('apass')`"
                 )
         else:
             if len(self._refcat):
@@ -205,10 +205,10 @@ class Session:
 
         # First-time invocation; set up the query file
         print("- Querying API ...", flush=True)
-        q = SessionQuery.new_from_name(name)
+        self._query = SessionQuery.new_from_name(name)
 
         with self._save_atomic("query.json") as f_new:
-            json.dump(q.to_dict(), f_new, ensure_ascii=False, indent=2)
+            json.dump(self._query.to_dict(), f_new, ensure_ascii=False, indent=2)
             print(file=f_new)  # `json` doesn't do a trailing newline
 
         self._info(
@@ -242,7 +242,7 @@ class Session:
 
         if self._query is None:
             raise InteractiveError(
-                f"cannot retrieve refcat before setting target - run something like `{self._my_var_name()}.target_by_name('HD 209458')`"
+                f"cannot retrieve refcat before setting target - run something like `{self._my_var_name()}.select_target(name='HD 209458')`"
             )
 
         print("- Querying API ...", flush=True)
@@ -274,7 +274,7 @@ class Session:
 
         if self._query is None:
             raise InteractiveError(
-                f"cannot retrieve plates before setting target - run something like `{self._my_var_name()}.target_by_name('HD 209458')`"
+                f"cannot retrieve plates before setting target - run something like `{self._my_var_name()}.select_target(name='HD 209458')`"
             )
 
         print("- Querying API ...", flush=True)
@@ -290,15 +290,18 @@ class Session:
         return self._plates
 
     def lightcurve(self, src: RefcatSourceRow) -> Lightcurve:
+        # We're going to need this later; emit the output now.
+        plates = self.plates()
+
         name = src["ref_text"]
         lc = self._lc_cache.get(name)
         if lc is not None:
             return lc
 
-        p = self.path("lightcurves") / f"{name}.ecsv"
+        relpath = f"lightcurves/{name}.ecsv"
 
         try:
-            lc = Lightcurve.read(str(p), format="ascii.ecsv")
+            lc = Lightcurve.read(str(self.path(relpath)), format="ascii.ecsv")
             self._lc_cache[name] = lc
             return lc
         except FileNotFoundError:
@@ -311,15 +314,29 @@ class Session:
         print("- Querying API ...", flush=True)
         lc = _query_lc(src["refcat"], name, src["gsc_bin_index"])
 
-        with self._save_atomic(p) as f_new:
+        # Cross-match with the plates
+
+        plate_lookup = {}
+
+        for p in plates:
+            plate_lookup[(p["series"], p["platenum"], p["mosnum"])] = p["local_id"]
+
+        lc["plate_local_id"] = -1
+
+        for p in lc:
+            p["plate_local_id"] = plate_lookup.get((p["series"], p["platenum"], p["mosnum"]), -1)
+
+        # All done
+
+        with self._save_atomic(relpath) as f_new:
             lc.write(f_new.name, format="ascii.ecsv", overwrite=True)
 
         self._info(
-            f"- Saved `{p}` ({len(lc)} relevant rows)"
+            f"- Saved `{self.path(relpath)}` ({len(lc)} relevant rows)"
         )
         return lc
 
-    def cutout(self, plate: PlateRow) -> Optional[pathlib.Path]:
+    def cutout(self, plate: PlateRow) -> Optional[str]:
         from astropy.io import fits
         from astropy.wcs import WCS
         from reproject import reproject_interp
@@ -328,10 +345,10 @@ class Session:
 
         local_id = plate["local_id"]
         plate_id = f"{plate['series']}{plate['platenum']:05d}_{plate['mosnum']:02d}"
-        dest_path = self.path("cutouts", f"{local_id:05d}_{plate_id}.fits")
+        dest_relpath = f"cutouts/{local_id:05d}_{plate_id}.fits"
 
-        if dest_path.exists():
-            return dest_path
+        if self.path(dest_relpath).exists():
+            return dest_relpath
 
         # We need to (try to) create it. Do we have a file we can work with?
 
@@ -439,11 +456,11 @@ class Session:
         hdu.header["DATE-MOS"] = plate["mos_date"].unmasked.fits
         hdu.header["MJD-MOS"] = plate["mos_date"].unmasked.mjd
 
-        with self._save_atomic(dest_path) as f_new:
+        with self._save_atomic(dest_relpath) as f_new:
             hdu.writeto(f_new.name, overwrite=True)
 
-        self._info(f"- Saved `{dest_path}`")
-        return dest_path
+        self._info(f"- Saved `{self.path(dest_relpath)}`")
+        return dest_relpath
 
 
     async def connect_to_wwt(self):

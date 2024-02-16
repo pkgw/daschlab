@@ -16,7 +16,6 @@ import numpy as np
 from pywwt.layers import ImageLayer
 import requests
 
-from . import InteractiveError
 from .series import SERIES, SeriesKind
 
 __all__ = ["Plates", "PlateRow"]
@@ -113,7 +112,7 @@ class Plates(Table):
         plt.xlabel("Year")
         return line2ds  # is this right/useful?
 
-    def find(self, series: str, platenum: int, mosnum: int) -> Plates:
+    def find(self, series: str, platenum: int, mosnum: int) -> "Plates":
         keep = (
             (self["series"] == series)
             & (self["platenum"] == platenum)
@@ -131,13 +130,15 @@ class Plates(Table):
         if il is not None:
             return il  # TODO: bring it to the top, etc?
 
-        fits_path = self._sess.cutout(plate)
-        if fits_path is None:
+        fits_relpath = self._sess.cutout(plate)
+        if fits_relpath is None:
+            from . import InteractiveError
+
             raise InteractiveError(
                 f"cannot create a cutout for plate #{local_id:05d} ({plate.plate_id()})"
             )
 
-        il = self._sess.wwt().layers.add_image_layer(str(fits_path))
+        il = self._sess.wwt().layers.add_image_layer(str(self._sess.path(fits_relpath)))
         self._layers[local_id] = il
         return il
 

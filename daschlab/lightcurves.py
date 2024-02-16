@@ -14,6 +14,7 @@ from astropy.table import Table
 from astropy.time import Time
 from astropy import units as u
 from astropy.utils.masked import Masked
+from bokeh.plotting import figure, show
 import numpy as np
 import requests
 
@@ -175,11 +176,76 @@ class Lightcurve(Table):
     - `magcal_magdep` is preferred calibrated phot measurement
     """
 
-    def without_nondetections(self) -> "Lightcurve":
+    def _copy_subset(self, keep, verbose: bool) -> "Lightcurve":
         new = copy(self)
-        keep = (~new["magcal_magdep"].mask).nonzero()
         new = new[keep]
+
+        if verbose:
+            nn = len(new)
+            print(f"Dropped {len(self) - nn} rows; {nn} remaining")
+
         return new
+
+    def without_nondetections(self, verbose: bool = True) -> "Lightcurve":
+        keep = (~self["magcal_magdep"].mask).nonzero()
+        return self._copy_subset(keep, verbose)
+
+    def without_large_separations(
+        self, sep: u.Quantity = 20 * u.arcsec, verbose=True
+    ) -> "Lightcurve":
+        mp = self.mean_pos()
+        seps = mp.separation(self["pos"])
+        keep = seps < sep
+        return self._copy_subset(keep, verbose)
+
+    def summary(self):
+        print(f"Number of rows: {len(self)}")
+
+        detns = self.without_nondetections(verbose=False)
+        print(f"Number of detections: {len(detns)}")
+
+        if len(detns):
+            mm = detns["magcal_magdep"].mean()
+            rm = ((detns["magcal_magdep"] - mm) ** 2).mean() ** 0.5
+            print(f"Mean/RMS mag: {mm:.3f} ± {rm:.3f}")
+
+    def mean_pos(self) -> SkyCoord:
+        detns = self.without_nondetections(verbose=False)
+        mra = detns["pos"].ra.deg.mean()
+        mdec = detns["pos"].dec.deg.mean()
+        return SkyCoord(mra, mdec, unit=u.deg, frame="icrs")
+
+    def plot(self) -> figure:
+        p = figure(
+            tools="hover",
+            tooltips=[
+                ("LocalID", "@local_id"),
+                ("Mag.", "@magcal_magdep"),
+                ("Epoch", "@year"),
+                ("Plate", "@series@platenum mosnum @mosnum pl_loc_id @plate_local_id"),
+            ],
+        )
+        print("TODO NO UPPER LIMITS!!!")
+        detns = self.without_nondetections(verbose=False)
+        detns["year"] = detns["date"].jyear
+        p.scatter("year", "magcal_magdep", source=detns.to_pandas())
+        show(p)
+        return p
+
+    def scatter(self, x_axis: str, y_axis: str) -> figure:
+        p = figure(
+            tools="hover",
+            tooltips=[
+                ("LocalID", "@local_id"),
+                ("Mag.", "@magcal_magdep"),
+                ("Epoch", "@year"),
+                ("Plate", "@series@platenum mosnum @mosnum pl_loc_id @plate_local_id"),
+            ],
+        )
+
+        p.scatter(x_axis, y_axis, source=self.to_pandas())
+        show(p)
+        return p
 
 
 def _query_lc(
@@ -305,7 +371,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["magcal_iso"] = mq("magcal_iso", np.float32, u.mag)
     table["magcal_iso_rms"] = mq("magcal_iso_rms", np.float32, u.mag)
     table["magcal_local"] = mq("magcal_local", np.float32, u.mag)
-    table["magcal_local_rms"] = mq("magcal_local_rms", np.float32, u.mag)
+    table["magcal_local_rms"] = extra_mq("magcal_local_rms", np.float32, u.mag, 99.0)
     table["magcal_local_error"] = extra_mq(
         "magcal_local_error", np.float32, u.mag, 99.0
     )

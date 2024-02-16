@@ -13,6 +13,7 @@ from astropy.coordinates import Angle, SkyCoord
 from astropy.table import Row, Table
 from astropy.time import Time
 from astropy import units as u
+from astropy.utils.masked import Masked
 import numpy as np
 import requests
 from pywwt.layers import TableLayer
@@ -142,8 +143,13 @@ def _query_refcat(
     table["u_pm_dec"] = (
         np.array(input_cols["uPMDecMasyr"], dtype=np.float32) * u.mas / u.yr
     )
-    table["stdmag"] = np.array(input_cols["stdmag"], dtype=np.float32) * u.mag
-    table["color"] = np.array(input_cols["color"], dtype=np.float32) * u.mag
+
+    stdmag = np.array(input_cols["stdmag"], dtype=np.float32)
+    table["stdmag"] = Masked(u.Quantity(stdmag, u.mag), stdmag >= 99)
+
+    color = np.array(input_cols["color"], dtype=np.float32)
+    table["color"] = Masked(u.Quantity(color, u.mag), color >= 99)
+
     table["vFlag"] = np.array(input_cols["vFlag"], dtype=np.uint16)
     table["magFlag"] = np.array(input_cols["magFlag"], dtype=np.uint16)
     table["class"] = np.array(input_cols["class"], dtype=np.uint16)
