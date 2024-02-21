@@ -7,6 +7,7 @@ Lightcurves
 
 from enum import IntFlag
 from urllib.parse import urlencode
+from typing import Tuple
 
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, Row
@@ -305,6 +306,42 @@ class LightcurvePoint(Row):
         )
 
 
+class Selector:
+    """
+    A magic object to help enable lightcurve filtering.
+    """
+
+    _lc: "Lightcurve"
+    _apply = None
+
+    def __init__(self, lc: "Lightcurve", apply):
+        self._lc = lc
+        self._apply = apply
+
+    def where(self, row_mask, **kwargs) -> "Lightcurve":
+        return self._apply(row_mask, **kwargs)
+
+    def detected(self, **kwargs) -> "Lightcurve":
+        m = ~self._lc["magcal_magdep"].mask
+        return self._apply(m, **kwargs)
+
+    def undetected(self, **kwargs) -> "Lightcurve":
+        m = self._lc["magcal_magdep"].mask
+        return self._apply(m, **kwargs)
+
+    def sep_below(
+        self, sep_limit: u.Quantity = 20 * u.arcsec, **kwargs
+    ) -> "Lightcurve":
+        mp = self._lc.mean_pos()
+        seps = mp.separation(self._lc["pos"])
+        m = seps < sep_limit
+        return self._apply(m, **kwargs)
+
+    def any_aflags(self, aflags: int, **kwargs) -> "Lightcurve":
+        m = (self._lc["aflags"] & aflags) != 0
+        return self._apply(m, **kwargs)
+
+
 class Lightcurve(Table):
     """
     Cheat sheet:
@@ -318,6 +355,8 @@ class Lightcurve(Table):
 
     Row = LightcurvePoint
 
+    # Filtering utilities
+
     def _copy_subset(self, keep, verbose: bool) -> "Lightcurve":
         new = self.copy(True)
         new = new[keep]
@@ -328,26 +367,37 @@ class Lightcurve(Table):
 
         return new
 
-    def without_nondetections(self, verbose: bool = True) -> "Lightcurve":
-        keep = (~self["magcal_magdep"].mask).nonzero()
-        return self._copy_subset(keep, verbose)
+    @property
+    def match(self) -> Selector:
+        return Selector(self, lambda m: m)
 
-    def without_large_separations(
-        self, sep: u.Quantity = 20 * u.arcsec, verbose: bool = True
-    ) -> "Lightcurve":
-        mp = self.mean_pos()
-        seps = mp.separation(self["pos"])
-        keep = seps < sep
-        return self._copy_subset(keep, verbose)
+    def _apply_keep_only(self, flags, verbose=True) -> "Lightcurve":
+        return self._copy_subset(flags, verbose)
 
-    def without_aflags(self, aflags: int, verbose: bool = True) -> "Lightcurve":
-        keep = (self["aflags"] & aflags) == 0
-        return self._copy_subset(keep, verbose)
+    @property
+    def keep_only(self) -> Selector:
+        return Selector(self, self._apply_keep_only)
+
+    def _apply_drop(self, flags, verbose=True) -> "Lightcurve":
+        return self._copy_subset(~flags, verbose)
+
+    @property
+    def drop(self) -> Selector:
+        return Selector(self, self._apply_drop)
+
+    def _apply_split_by(self, flags) -> Tuple["Lightcurve", "Lightcurve"]:
+        lc_left = self._copy_subset(flags, False)
+        lc_right = self._copy_subset(~flags, False)
+        return (lc_left, lc_right)
+
+    @property
+    def split_by(self) -> Selector:
+        return Selector(self, self._apply_split_by)
 
     def summary(self):
         print(f"Number of rows: {len(self)}")
 
-        detns = self.without_nondetections(verbose=False)
+        detns = self.keep_only.detected(verbose=False)
         print(f"Number of detections: {len(detns)}")
 
         if len(detns):
@@ -356,14 +406,13 @@ class Lightcurve(Table):
             print(f"Mean/RMS mag: {mm:.3f} ± {rm:.3f}")
 
     def mean_pos(self) -> SkyCoord:
-        detns = self.without_nondetections(verbose=False)
+        detns = self.keep_only.detected(verbose=False)
         mra = detns["pos"].ra.deg.mean()
         mdec = detns["pos"].dec.deg.mean()
         return SkyCoord(mra, mdec, unit=u.deg, frame="icrs")
 
     def plot(self, x_axis="year") -> figure:
-        detect = self[~self["magcal_magdep"].mask].copy(True)
-        limit = self[self["magcal_magdep"].mask].copy(True)
+        detect, limit = self.split_by.detected()
 
         detect["year"] = detect["date"].jyear
         limit["year"] = limit["date"].jyear
