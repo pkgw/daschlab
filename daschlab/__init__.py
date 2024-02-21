@@ -6,11 +6,13 @@ The main ``daschlab`` package.
 """
 
 from contextlib import contextmanager
+import io
 import json
 import os
 import pathlib
 import sys
 import tempfile
+import time
 from typing import Dict, FrozenSet, Iterable, Optional
 import warnings
 
@@ -23,6 +25,8 @@ from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
 from .plates import Plates, PlateRow, _query_plates
 from .lightcurves import Lightcurve, _query_lc
+from .cutouts import _query_cutout
+
 
 __all__ = [
     "SUPPORTED_REFCATS",
@@ -62,8 +66,8 @@ def _maybe_install_custom_exception_formatter():
 
 
 def _formatsc(sc: SkyCoord) -> str:
-    r = sc.ra.to_string(sep=":", precision=1)
-    d = sc.dec.to_string(sep=":", precision=0, alwayssign=True)
+    r = sc.ra.to_string(sep=":", precision=1, unit=u.hour)
+    d = sc.dec.to_string(sep=":", precision=0, unit=u.deg, alwayssign=True)
     return f"{r} {d}"
 
 
@@ -338,10 +342,6 @@ class Session:
 
     def cutout(self, plate: PlateRow) -> Optional[str]:
         from astropy.io import fits
-        from astropy.wcs import WCS
-        from reproject import reproject_interp
-
-        self._require_internal()
 
         local_id = plate["local_id"]
         plate_id = f"{plate['series']}{plate['platenum']:05d}_{plate['mosnum']:02d}"
@@ -350,114 +350,46 @@ class Session:
         if self.path(dest_relpath).exists():
             return dest_relpath
 
-        # We need to (try to) create it. Do we have a file we can work with?
-
-        buckets = [
-            ("/n/boslfs02/LABS/dasch_project/buckets/tnx.bucket/data", "tnx"),
-            ("/n/boslfs02/LABS/dasch_project/buckets/ww.bucket/data", "ww"),
-        ]
-
-        key1 = plate["platenum"] % 100
-        key2 = (plate["platenum"] // 100) % 100
-        tail = f"{key1:02d}/{key2:02d}/{plate_id}_full.fits"
-        src_path = None
-
-        for b, mtype in buckets:
-            p = pathlib.Path(b, tail)
-            if p.exists():
-                src_path = p
-                break
-
-        if src_path is None:
-            return None
-
-        # OK, let's do it
-
-        _WCS_SCALE = 0.0004
+        # Try to fetch it
 
         self.path("cutouts").mkdir(exist_ok=True)
-        print("- Computing ...", flush=True)
-
+        t0 = time.time()
+        print("- Querying API ...", flush=True)
         center = self.query().pos_as_skycoord()
-        halfsize_pix = CUTOUT_HALFSIZE.deg / _WCS_SCALE
-        halfsize_pix = max(int(round(halfsize_pix)), 1)
-        target_size = 2 * halfsize_pix + 1
-        target_wcs = WCS(
-            {
-                "CTYPE1": "RA---TAN",
-                "CTYPE2": "DEC--TAN",
-                "CUNIT1": "deg",
-                "CUNIT2": "deg",
-                "CRVAL1": center.ra.deg,
-                "CRVAL2": center.dec.deg,
-                "CD1_1": -_WCS_SCALE,
-                "CD2_2": _WCS_SCALE,
-                "CRPIX1": halfsize_pix + 1,
-                "CRPIX2": halfsize_pix + 1,
-            }
-        )
+        fits_data = _query_cutout(plate["series"], plate["platenum"], plate["mosnum"], center)
+        print(f"- Fetched {len(fits_data)} bytes in {time.time()-t0:.0f} seconds")
+
+        # Add a bunch of headers using the metadata that we have
+
+        fits_data = io.BytesIO(fits_data)
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
 
-            with fits.open(str(src_path)) as hdul:
-                cutout = reproject_interp(
-                    hdul,
-                    target_wcs,
-                    shape_out=(target_size, target_size),
-                    return_footprint=False,
-                )
-                src_header = hdul[0].header
+            with fits.open(fits_data) as hdul:
+                h = hdul[0].header
 
-            cutout = cutout.astype(np.uint16)
+                h["D_SCNNUM"] = plate["scannum"]
+                h["D_EXPNUM"] = plate["expnum"]
+                h["D_SOLNUM"] = plate["solnum"]
+                # the 'class' column is handled as a masked array and when we convert it
+                # to a row, the masked value seems to become a float64?
+                h["D_PCLASS"] = "" if plate["class"] is np.ma.masked else plate["class"]
+                h["D_ROTFLG"] = plate["rotation_deg"]
+                h["EXPTIME"] = plate["exptime"] * 60
 
-        hdu = fits.PrimaryHDU()
-        hdu.data = cutout
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore")
+                    h["DATE-OBS"] = plate["obs_date"].fits
+                    h["MJD-OBS"] = plate["obs_date"].mjd
 
-        for k in (
-            "S_STAND",
-            "S_TYPE",
-            "S_PCOMM",
-            "S_PCOMM1",
-            "S_PCOMM2",
-            "S_PCOMM3",
-            "S_OPER",
-            "S_EXPOSE",
-            "S_PTTRN",
-            "S_ZPOS",
-            "APERTURE",
-        ):
-            v = src_header.get(k)
-            if v is not None:
-                hdu.header[k] = v
+                h["DATE-SCN"] = plate["scan_date"].unmasked.fits
+                h["MJD-SCN"] = plate["scan_date"].unmasked.mjd
+                h["DATE-MOS"] = plate["mos_date"].unmasked.fits
+                h["MJD-MOS"] = plate["mos_date"].unmasked.mjd
 
-        hdu.header.update(target_wcs.to_header())
-
-        hdu.header["C_SERIES"] = plate["series"]
-        hdu.header["C_PLATE"] = plate["platenum"]
-        hdu.header["D_MOSNUM"] = plate["mosnum"]
-        hdu.header["D_ASTRTY"] = mtype
-        hdu.header["D_SCNNUM"] = plate["scannum"]
-        hdu.header["D_EXPNUM"] = plate["expnum"]
-        hdu.header["D_SOLNUM"] = plate["solnum"]
-        # the 'class' column is handled as a masked array and when we convert it
-        # to a row, the masked value seems to become a float64?
-        hdu.header["D_PCLASS"] = "" if plate["class"] is np.ma.masked else plate["class"]
-        hdu.header["D_ROTFLG"] = plate["rotation_deg"]
-        hdu.header["EXPTIME"] = plate["exptime"] * 60
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            hdu.header["DATE-OBS"] = plate["obs_date"].fits
-            hdu.header["MJD-OBS"] = plate["obs_date"].mjd
-
-        hdu.header["DATE-SCN"] = plate["scan_date"].unmasked.fits
-        hdu.header["MJD-SCN"] = plate["scan_date"].unmasked.mjd
-        hdu.header["DATE-MOS"] = plate["mos_date"].unmasked.fits
-        hdu.header["MJD-MOS"] = plate["mos_date"].unmasked.mjd
-
-        with self._save_atomic(dest_relpath) as f_new:
-            hdu.writeto(f_new.name, overwrite=True)
+                with self._save_atomic(dest_relpath) as f_new:
+                    hdul.writeto(f_new.name, overwrite=True)
 
         self._info(f"- Saved `{self.path(dest_relpath)}`")
         return dest_relpath

@@ -312,8 +312,8 @@ class Lightcurve(Table):
 
     - `date` is HJD midpoint
     - `magcal_magdep` is preferred calibrated phot measurement
-    - legacy plotter error bar is `magcal_local_rms` * `error_bar_factor`
-      which is set to match the error bars to the empirical RMS, if this
+    - legacy plotter error bar is `magcal_local_rms` * `error_bar_factor`, the
+      latter being set to match the error bars to the empirical RMS, if this
       would shrink the error bars
     """
 
@@ -364,7 +364,7 @@ class Lightcurve(Table):
 
     def plot(self) -> figure:
         p = figure(
-            tools="hover",
+            tools="pan,wheel_zoom,box_zoom,reset,hover",
             tooltips=[
                 ("LocalID", "@local_id"),
                 ("Mag.", "@magcal_magdep"),
@@ -381,7 +381,7 @@ class Lightcurve(Table):
 
     def scatter(self, x_axis: str, y_axis: str) -> figure:
         p = figure(
-            tools="hover",
+            tools="pan,wheel_zoom,box_zoom,reset,hover",
             tooltips=[
                 ("LocalID", "@local_id"),
                 ("Mag.", "@magcal_magdep"),
