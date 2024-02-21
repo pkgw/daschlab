@@ -13,13 +13,14 @@ import pathlib
 import sys
 import tempfile
 import time
-from typing import Dict, FrozenSet, Iterable, Optional
+from typing import Dict, FrozenSet, Iterable, Literal, Optional, Union
 import warnings
 
 from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
 import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
+from pywwt.layers import ImageLayer
 
 from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
@@ -69,6 +70,10 @@ def _formatsc(sc: SkyCoord) -> str:
     r = sc.ra.to_string(sep=":", precision=1, unit=u.hour)
     d = sc.dec.to_string(sep=":", precision=0, unit=u.deg, alwayssign=True)
     return f"{r} {d}"
+
+
+SourceReferenceType = Union[RefcatSourceRow, int, Literal["click"]]
+PlateReferenceType = Union[PlateRow, int]
 
 
 class Session:
@@ -249,6 +254,7 @@ class Session:
                 f"cannot retrieve refcat before setting target - run something like `{self._my_var_name()}.select_target(name='HD 209458')`"
             )
 
+        t0 = time.time()
         print("- Querying API ...", flush=True)
         self._refcat = _query_refcat(name, self._query.pos_as_skycoord(), REFCAT_RADIUS)
         self._refcat._sess = self
@@ -256,8 +262,9 @@ class Session:
         with self._save_atomic("refcat.ecsv") as f_new:
             self._refcat.write(f_new.name, format="ascii.ecsv", overwrite=True)
 
+        elapsed = time.time() - t0
         self._info(
-            f"- Saved `refcat.ecsv` for reference catalog \"{name}\" ({len(self._refcat)} sources)"
+            f"- Retrieved {len(self._refcat)} sources from reference catalog \"{name}\" in {elapsed:.0f} seconds and saved as `refcat.ecsv`"
         )
         return self
 
@@ -281,6 +288,7 @@ class Session:
                 f"cannot retrieve plates before setting target - run something like `{self._my_var_name()}.select_target(name='HD 209458')`"
             )
 
+        t0 = time.time()
         print("- Querying API ...", flush=True)
         self._plates = _query_plates(self._query.pos_as_skycoord(), PLATES_RADIUS)
         self._plates._sess = self
@@ -288,12 +296,34 @@ class Session:
         with self._save_atomic("plates.ecsv") as f_new:
             self._plates.write(f_new.name, format="ascii.ecsv", overwrite=True)
 
+        elapsed = time.time() - t0
         self._info(
-            f"- Saved `plates.ecsv` ({len(self._plates)} relevant plates)"
+            f"- Retrieved {len(self._plates)} relevant plates in {elapsed:.0f} seconds and saved as `plates.ecsv`"
         )
         return self._plates
 
-    def lightcurve(self, src: RefcatSourceRow) -> Lightcurve:
+    def _resolve_src_reference(self, src_ref: SourceReferenceType) -> RefcatSourceRow:
+        if isinstance(src_ref, str) and src_ref == "click":
+            info = self.wwt().most_recent_source
+
+            if info is None:
+                raise InteractiveError("trying to pick a source based on the latest WWT click, but nothing has been clicked")
+
+            src_id = info["layerData"].get("local_id")
+            if src_id is None:
+                raise InteractiveError("trying to pick a source based on the latest WWT click, but the clicked source has no \"local_id\" metadatum")
+
+            return self.refcat()[int(src_id)]
+
+        if isinstance(src_ref, int):
+            return self.refcat()[src_ref]
+
+        assert isinstance(src_ref, RefcatSourceRow)
+        return src_ref
+
+    def lightcurve(self, src_ref: SourceReferenceType) -> Lightcurve:
+        src = self._resolve_src_reference(src_ref)
+
         # We're going to need this later; emit the output now.
         plates = self.plates()
 
@@ -315,6 +345,7 @@ class Session:
 
         self.path("lightcurves").mkdir(exist_ok=True)
 
+        t0 = time.time()
         print("- Querying API ...", flush=True)
         lc = _query_lc(src["refcat"], name, src["gsc_bin_index"])
 
@@ -335,13 +366,23 @@ class Session:
         with self._save_atomic(relpath) as f_new:
             lc.write(f_new.name, format="ascii.ecsv", overwrite=True)
 
+        elapsed = time.time() - t0
         self._info(
-            f"- Saved `{self.path(relpath)}` ({len(lc)} relevant rows)"
+            f"- Fetched {len(lc)} rows in {elapsed:.0f} seconds and saved as `{self.path(relpath)}`"
         )
         return lc
 
-    def cutout(self, plate: PlateRow) -> Optional[str]:
+    def _resolve_plate_reference(self, plate_ref: PlateReferenceType) -> PlateRow:
+        if isinstance(plate_ref, int):
+            return self.plates()[plate_ref]
+
+        assert isinstance(plate_ref, PlateRow)
+        return plate_ref
+
+    def cutout(self, plate_ref: PlateReferenceType) -> Optional[str]:
         from astropy.io import fits
+
+        plate = self._resolve_plate_reference(plate_ref)
 
         local_id = plate["local_id"]
         plate_id = f"{plate['series']}{plate['platenum']:05d}_{plate['mosnum']:02d}"
@@ -393,7 +434,6 @@ class Session:
 
         self._info(f"- Saved `{self.path(dest_relpath)}`")
         return dest_relpath
-
 
     async def connect_to_wwt(self):
         if self._wwt is not None:

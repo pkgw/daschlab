@@ -5,7 +5,6 @@
 Lightcurves
 """
 
-from copy import copy
 from enum import IntFlag
 from urllib.parse import urlencode
 
@@ -320,7 +319,7 @@ class Lightcurve(Table):
     Row = LightcurvePoint
 
     def _copy_subset(self, keep, verbose: bool) -> "Lightcurve":
-        new = copy(self)
+        new = self.copy(True)
         new = new[keep]
 
         if verbose:
@@ -362,7 +361,13 @@ class Lightcurve(Table):
         mdec = detns["pos"].dec.deg.mean()
         return SkyCoord(mra, mdec, unit=u.deg, frame="icrs")
 
-    def plot(self) -> figure:
+    def plot(self, x_axis="year") -> figure:
+        detect = self[~self["magcal_magdep"].mask].copy(True)
+        limit = self[self["magcal_magdep"].mask].copy(True)
+
+        detect["year"] = detect["date"].jyear
+        limit["year"] = limit["date"].jyear
+
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
             tooltips=[
@@ -372,10 +377,20 @@ class Lightcurve(Table):
                 ("Plate", "@series@platenum mosnum @mosnum pl_loc_id @plate_local_id"),
             ],
         )
-        print("TODO NO UPPER LIMITS!!!")
-        detns = self.without_nondetections(verbose=False)
-        detns["year"] = detns["date"].jyear
-        p.scatter("year", "magcal_magdep", source=detns.to_pandas())
+
+        if len(limit):
+            p.inverted_triangle(
+                x_axis,
+                "limiting_mag_local",
+                fill_color="lightgray",
+                line_color=None,
+                source=limit.to_pandas(),
+            )
+
+        if len(detect):
+            p.scatter(x_axis, "magcal_magdep", source=detect.to_pandas())
+
+        p.y_range.flipped = True
         show(p)
         return p
 
@@ -391,6 +406,10 @@ class Lightcurve(Table):
         )
 
         p.scatter(x_axis, y_axis, source=self.to_pandas())
+
+        if y_axis == "magcal_magdep":
+            p.y_range.flipped = True
+
         show(p)
         return p
 

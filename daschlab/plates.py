@@ -123,7 +123,9 @@ class Plates(Table):
         )
         return self[keep]
 
-    def show(self, plate: PlateRow) -> ImageLayer:
+    def show(self, plate_ref: "PlateReferenceType") -> ImageLayer:
+        plate = self._sess._resolve_plate_reference(plate_ref)
+
         if self._layers is None:
             self._layers = {}
 
