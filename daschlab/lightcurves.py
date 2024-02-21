@@ -7,7 +7,8 @@ Lightcurves
 
 from enum import IntFlag
 from urllib.parse import urlencode
-from typing import Tuple
+from typing import Dict, Optional, Tuple
+import warnings
 
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, Row
@@ -319,15 +320,38 @@ class Selector:
         self._apply = apply
 
     def where(self, row_mask, **kwargs) -> "Lightcurve":
-        return self._apply(row_mask, **kwargs)
+        return self._apply(self, row_mask, **kwargs)
 
     def detected(self, **kwargs) -> "Lightcurve":
         m = ~self._lc["magcal_magdep"].mask
-        return self._apply(m, **kwargs)
+        return self._apply(self, m, **kwargs)
 
     def undetected(self, **kwargs) -> "Lightcurve":
         m = self._lc["magcal_magdep"].mask
-        return self._apply(m, **kwargs)
+        return self._apply(self, m, **kwargs)
+
+    def rejected(self, **kwargs) -> "Lightcurve":
+        m = self._lc["reject"] != 0
+        return self._apply(self, m, **kwargs)
+
+    def rejected_with(self, tag: str, strict: bool = False, **kwargs) -> "Lightcurve":
+        bitnum0 = None
+
+        if self._lc._rejection_tags is not None:
+            bitnum0 = self._lc._rejection_tags.get(tag)
+
+        if bitnum0 is not None:
+            m = (self._lc["reject"] & (1 << bitnum0)) != 0
+        elif strict:
+            raise Exception(f"unknown rejection tag `{tag}`")
+        else:
+            m = np.zeros(len(self._lc), dtype=bool)
+
+        return self._apply(self, m, **kwargs)
+
+    def nonrej_detected(self, **kwargs) -> "Lightcurve":
+        m = ~self._lc["magcal_magdep"].mask & (self._lc["reject"] == 0)
+        return self._apply(self, m, **kwargs)
 
     def sep_below(
         self, sep_limit: u.Quantity = 20 * u.arcsec, **kwargs
@@ -335,11 +359,19 @@ class Selector:
         mp = self._lc.mean_pos()
         seps = mp.separation(self._lc["pos"])
         m = seps < sep_limit
-        return self._apply(m, **kwargs)
+        return self._apply(self, m, **kwargs)
 
     def any_aflags(self, aflags: int, **kwargs) -> "Lightcurve":
         m = (self._lc["aflags"] & aflags) != 0
-        return self._apply(m, **kwargs)
+        return self._apply(self, m, **kwargs)
+
+    def local_id(self, local_id: int, **kwargs) -> "Lightcurve":
+        m = self._lc["local_id"] == local_id
+        return self._apply(self, m, **kwargs)
+
+    def series(self, series: str, **kwargs) -> "Lightcurve":
+        m = self._lc["series"] == series
+        return self._apply(self, m, **kwargs)
 
 
 class Lightcurve(Table):
@@ -354,6 +386,7 @@ class Lightcurve(Table):
     """
 
     Row = LightcurvePoint
+    _rejection_tags: Optional[Dict[str, int]] = None
 
     # Filtering utilities
 
@@ -365,27 +398,32 @@ class Lightcurve(Table):
             nn = len(new)
             print(f"Dropped {len(self) - nn} rows; {nn} remaining")
 
+        new._rejection_tags = self._rejection_tags
         return new
 
     @property
     def match(self) -> Selector:
-        return Selector(self, lambda m: m)
+        return Selector(self, lambda _sel, m: m)
 
-    def _apply_keep_only(self, flags, verbose=True) -> "Lightcurve":
+    @property
+    def count(self) -> Selector:
+        return Selector(self, lambda _sel, m: m.sum())
+
+    def _apply_keep_only(self, _selector, flags, verbose=True) -> "Lightcurve":
         return self._copy_subset(flags, verbose)
 
     @property
     def keep_only(self) -> Selector:
         return Selector(self, self._apply_keep_only)
 
-    def _apply_drop(self, flags, verbose=True) -> "Lightcurve":
+    def _apply_drop(self, _selector, flags, verbose=True) -> "Lightcurve":
         return self._copy_subset(~flags, verbose)
 
     @property
     def drop(self) -> Selector:
         return Selector(self, self._apply_drop)
 
-    def _apply_split_by(self, flags) -> Tuple["Lightcurve", "Lightcurve"]:
+    def _apply_split_by(self, _selector, flags) -> Tuple["Lightcurve", "Lightcurve"]:
         lc_left = self._copy_subset(flags, False)
         lc_right = self._copy_subset(~flags, False)
         return (lc_left, lc_right)
@@ -394,11 +432,51 @@ class Lightcurve(Table):
     def split_by(self) -> Selector:
         return Selector(self, self._apply_split_by)
 
-    def summary(self):
-        print(f"Number of rows: {len(self)}")
+    def _make_reject_selector(self, tag: str, verbose: bool, apply_func) -> Selector:
+        if self._rejection_tags is None:
+            self._rejection_tags = {}
 
-        detns = self.keep_only.detected(verbose=False)
-        print(f"Number of detections: {len(detns)}")
+        bitnum0 = self._rejection_tags.get(tag)
+
+        if bitnum0 is None:
+            bitnum0 = len(self._rejection_tags)
+
+            if verbose:
+                print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
+
+            self._rejection_tags[tag] = bitnum0
+
+        selector = Selector(self, apply_func)
+        selector._bitnum0 = bitnum0
+        return selector
+
+    def _apply_reject(self, selector, flags, verbose: bool = True):
+        n_before = (self["reject"] != 0).sum()
+        self["reject"][flags] |= 1 << selector._bitnum0
+        n_after = (self["reject"] != 0).sum()
+
+        if verbose:
+            print(
+                f"Marked {n_after - n_before} new rows as rejected; {n_after} total are rejected"
+            )
+
+    def reject(self, tag: str, verbose: bool = True) -> Selector:
+        return self._make_reject_selector(tag, verbose, self._apply_reject)
+
+    def _apply_reject_unless(self, selector, flags, verbose: bool = True):
+        return self._apply_reject(selector, ~flags, verbose)
+
+    def reject_unless(self, tag: str, verbose: bool = True) -> Selector:
+        return self._make_reject_selector(tag, verbose, self._apply_reject_unless)
+
+    def summary(self):
+        print(f"Total number of rows: {len(self)}")
+
+        nonrej = self.drop.rejected(verbose=False)
+        print(f"Number of rejected rows: {len(self) - len(nonrej)}")
+
+        detns = nonrej.keep_only.detected(verbose=False)
+        print(f"Number of unrejected detections: {len(detns)}")
 
         if len(detns):
             mm = detns["magcal_magdep"].mean()
@@ -406,16 +484,27 @@ class Lightcurve(Table):
             print(f"Mean/RMS mag: {mm:.3f} ± {rm:.3f}")
 
     def mean_pos(self) -> SkyCoord:
-        detns = self.keep_only.detected(verbose=False)
+        detns = self.keep_only.nonrej_detected(verbose=False)
         mra = detns["pos"].ra.deg.mean()
         mdec = detns["pos"].dec.deg.mean()
         return SkyCoord(mra, mdec, unit=u.deg, frame="icrs")
 
     def plot(self, x_axis="year") -> figure:
-        detect, limit = self.split_by.detected()
+        detect, limit = self.drop.rejected(verbose=False).split_by.detected()
 
-        detect["year"] = detect["date"].jyear
-        limit["year"] = limit["date"].jyear
+        with warnings.catch_warnings():
+            # Shush ERFA warnings about dubious years -- if we don't change the
+            # `date` column to not be an Astropy Time, the warnings come out in
+            # the `to_pandas()` call(s).
+            warnings.simplefilter("ignore")
+
+            date = detect["date"]
+            detect["date"] = date.jd
+            detect["year"] = date.jyear
+
+            date = limit["date"]
+            limit["date"] = date.jd
+            limit["year"] = date.jyear
 
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
@@ -660,5 +749,6 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table.sort(["date"])
 
     table["local_id"] = np.arange(len(table))
+    table["reject"] = np.zeros(len(table), dtype=np.uint64)
 
     return table

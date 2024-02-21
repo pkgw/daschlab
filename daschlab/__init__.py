@@ -405,7 +405,7 @@ class Session:
         fits_data = io.BytesIO(fits_data)
 
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
+            warnings.simplefilter("ignore")
 
             with fits.open(fits_data) as hdul:
                 h = hdul[0].header
@@ -418,12 +418,8 @@ class Session:
                 h["D_PCLASS"] = "" if plate["class"] is np.ma.masked else plate["class"]
                 h["D_ROTFLG"] = plate["rotation_deg"]
                 h["EXPTIME"] = plate["exptime"] * 60
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore")
-                    h["DATE-OBS"] = plate["obs_date"].fits
-                    h["MJD-OBS"] = plate["obs_date"].mjd
-
+                h["DATE-OBS"] = plate["obs_date"].fits
+                h["MJD-OBS"] = plate["obs_date"].mjd
                 h["DATE-SCN"] = plate["scan_date"].unmasked.fits
                 h["MJD-SCN"] = plate["scan_date"].unmasked.mjd
                 h["DATE-MOS"] = plate["mos_date"].unmasked.fits
