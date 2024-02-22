@@ -547,8 +547,20 @@ def _pdf_export(
 
     # First thing, ensure that we have all of our cutouts
 
+    n_orig = len(plates)
+    plates = plates.keep_only.wcs_solved(verbose=False).drop.rejected(verbose=False)
+    n_filtered = len(plates)
+
+    if not n_filtered:
+        raise Exception("no plates remain after filtering")
+
+    if n_filtered != n_orig:
+        print(
+            f"Filtered input list of {n_orig} plates down to {n_filtered} for display"
+        )
+
     print(
-        f"Ensuring that we have cutouts for {len(plates)} plates, this may take a while ..."
+        f"Ensuring that we have cutouts for {n_filtered} plates, this may take a while ..."
     )
     t0 = time.time()
 

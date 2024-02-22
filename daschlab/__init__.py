@@ -20,7 +20,6 @@ from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
 import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
-from pywwt.layers import ImageLayer
 
 from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
@@ -354,7 +353,8 @@ class Session:
         plate_lookup = {}
 
         for p in plates:
-            plate_lookup[(p["series"], p["platenum"], p["mosnum"])] = p["local_id"]
+            if p["mosnum"] is not np.ma.masked:
+                plate_lookup[(p["series"], p["platenum"], p["mosnum"])] = p["local_id"]
 
         lc["plate_local_id"] = -1
 
