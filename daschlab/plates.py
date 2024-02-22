@@ -5,7 +5,8 @@
 Lists of plates.
 """
 
-from typing import Dict
+import re
+from typing import Dict, Iterable, Optional, Tuple
 from urllib.parse import urlencode
 
 from astropy.coordinates import Angle, SkyCoord
@@ -19,7 +20,7 @@ import requests
 
 from .series import SERIES, SeriesKind
 
-__all__ = ["Plates", "PlateRow"]
+__all__ = ["Plates", "PlateRow", "PlateSelector"]
 
 
 _API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/queryplates.php"
@@ -30,6 +31,20 @@ def _daschtime_to_isot(t: str) -> str:
     inner_bits = outer_bits[-1].split("-")
     outer_bits[-1] = ":".join(inner_bits)
     return "T".join(outer_bits)
+
+
+_PLATE_NAME_REGEX = re.compile(r"^([a-zA-Z]+)([0-9]{1,5})$")
+
+
+def _parse_plate_name(name: str) -> Tuple[str, int]:
+    try:
+        m = _PLATE_NAME_REGEX.match(name)
+        series = m[1].lower()
+        platenum = int(m[2])
+    except Exception:
+        raise Exception(f"invalid plate name `{name}`")
+
+    return series, platenum
 
 
 _COLTYPES = {
@@ -63,17 +78,160 @@ class PlateRow(Row):
         return f"{self['series']}{self['platenum']:05d}_{self['mosnum']:02d}"
 
 
+class PlateSelector:
+    """
+    A magic object to help enable plate-list filtering.
+    """
+
+    _plates: "Plates"
+    _apply = None
+
+    def __init__(self, plates: "Plates", apply):
+        self._plates = plates
+        self._apply = apply
+
+    def where(self, row_mask, **kwargs) -> "Plates":
+        return self._apply(self, row_mask, **kwargs)
+
+    def rejected(self, **kwargs) -> "Plates":
+        m = self._plates["reject"] != 0
+        return self._apply(self, m, **kwargs)
+
+    def rejected_with(self, tag: str, strict: bool = False, **kwargs) -> "Plates":
+        bitnum0 = None
+
+        if self._plates._rejection_tags is not None:
+            bitnum0 = self._plates._rejection_tags.get(tag)
+
+        if bitnum0 is not None:
+            m = (self._plates["reject"] & (1 << bitnum0)) != 0
+        elif strict:
+            raise Exception(f"unknown rejection tag `{tag}`")
+        else:
+            m = np.zeros(len(self._plates), dtype=bool)
+
+        return self._apply(self, m, **kwargs)
+
+    def local_id(self, local_id: int, **kwargs) -> "Plates":
+        m = self._plates["local_id"] == local_id
+        return self._apply(self, m, **kwargs)
+
+    def series(self, series: str, **kwargs) -> "Plates":
+        m = self._plates["series"] == series
+        return self._apply(self, m, **kwargs)
+
+    def narrow(self, **kwargs) -> "Plates":
+        m = [SERIES[k].kind == SeriesKind.NARROW for k in self._plates["series"]]
+        return self._apply(self, m, **kwargs)
+
+    def patrol(self, **kwargs) -> "Plates":
+        m = [SERIES[k].kind == SeriesKind.PATROL for k in self._plates["series"]]
+        return self._apply(self, m, **kwargs)
+
+    def meteor(self, **kwargs) -> "Plates":
+        m = [SERIES[k].kind == SeriesKind.METEOR for k in self._plates["series"]]
+        return self._apply(self, m, **kwargs)
+
+    def plate_names(self, names: Iterable[str], **kwargs) -> "Plates":
+        # This feels so inefficient, but it's not obvious to me how to do any better
+        m = np.zeros(len(self._plates), dtype=bool)
+
+        for name in names:
+            series, platenum = _parse_plate_name(name)
+            this_one = (self._plates["series"] == series) & (
+                self._plates["platenum"] == platenum
+            )
+            m |= this_one
+
+        return self._apply(self, m, **kwargs)
+
+
 class Plates(Table):
     _sess: "daschlab.Session" = None
+    _rejection_tags: Optional[Dict[str, int]] = None
     _layers: Dict[int, ImageLayer] = None
     Row = PlateRow
 
-    def only_narrow(self) -> "Plates":
-        mask = [SERIES[k].kind == SeriesKind.NARROW for k in self["series"]]
-        return self[mask]
+    # Filtering infrastructure
+
+    def _copy_subset(self, keep, verbose: bool) -> "Plates":
+        new = self.copy(True)
+        new = new[keep]
+
+        if verbose:
+            nn = len(new)
+            print(f"Dropped {len(self) - nn} rows; {nn} remaining")
+
+        new._rejection_tags = self._rejection_tags
+        return new
+
+    @property
+    def match(self) -> PlateSelector:
+        return PlateSelector(self, lambda _sel, m: m)
+
+    @property
+    def count(self) -> PlateSelector:
+        return PlateSelector(self, lambda _sel, m: m.sum())
+
+    def _apply_keep_only(self, _selector, flags, verbose=True) -> "Plates":
+        return self._copy_subset(flags, verbose)
+
+    @property
+    def keep_only(self) -> PlateSelector:
+        return PlateSelector(self, self._apply_keep_only)
+
+    def _apply_drop(self, _selector, flags, verbose=True) -> "Plates":
+        return self._copy_subset(~flags, verbose)
+
+    @property
+    def drop(self) -> PlateSelector:
+        return PlateSelector(self, self._apply_drop)
+
+    def _make_reject_selector(
+        self, tag: str, verbose: bool, apply_func
+    ) -> PlateSelector:
+        if self._rejection_tags is None:
+            self._rejection_tags = {}
+
+        bitnum0 = self._rejection_tags.get(tag)
+
+        if bitnum0 is None:
+            bitnum0 = len(self._rejection_tags)
+            if bitnum0 > 63:
+                raise Exception("you cannot have more than 64 distinct rejection tags")
+
+            if verbose:
+                print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
+
+            self._rejection_tags[tag] = bitnum0
+
+        selector = PlateSelector(self, apply_func)
+        selector._bitnum0 = bitnum0
+        return selector
+
+    def _apply_reject(self, selector, flags, verbose: bool = True):
+        n_before = (self["reject"] != 0).sum()
+        self["reject"][flags] |= 1 << selector._bitnum0
+        n_after = (self["reject"] != 0).sum()
+
+        if verbose:
+            print(
+                f"Marked {n_after - n_before} new rows as rejected; {n_after} total are rejected"
+            )
+
+    def reject(self, tag: str, verbose: bool = True) -> PlateSelector:
+        return self._make_reject_selector(tag, verbose, self._apply_reject)
+
+    def _apply_reject_unless(self, selector, flags, verbose: bool = True):
+        return self._apply_reject(selector, ~flags, verbose)
+
+    def reject_unless(self, tag: str, verbose: bool = True) -> PlateSelector:
+        return self._make_reject_selector(tag, verbose, self._apply_reject_unless)
+
+    # Non-filtering actions on this list
 
     def series_info(self) -> Table:
-        g = self.group_by("series")
+        g = self.drop.rejected(verbose=False).group_by("series")
 
         t = Table()
         t["series"] = [t[0] for t in g.groups.keys]
@@ -95,7 +253,7 @@ class Plates(Table):
         from scipy.stats import gaussian_kde
 
         plot_years = np.linspace(1875, 1995, 200)
-        plate_years = self["obs_date"].jyear
+        plate_years = self.drop.rejected(verbose=False)["obs_date"].jyear
 
         kde = gaussian_kde(plate_years, bw_method="scott")
         plate_years_smoothed = kde(plot_years)
@@ -114,14 +272,6 @@ class Plates(Table):
         p.line(plot_years, plate_years_smoothed)
         show(p)
         return p
-
-    def find(self, series: str, platenum: int, mosnum: int) -> "Plates":
-        keep = (
-            (self["series"] == series)
-            & (self["platenum"] == platenum)
-            & (self["mosnum"] == mosnum)
-        )
-        return self[keep]
 
     def show(self, plate_ref: "PlateReferenceType") -> ImageLayer:
         plate = self._sess._resolve_plate_reference(plate_ref)
@@ -221,5 +371,6 @@ def _query_plates(
     table.sort(["obs_date"])
 
     table["local_id"] = np.arange(len(table))
+    table["reject"] = np.zeros(len(table), dtype=np.uint64)
 
     return table

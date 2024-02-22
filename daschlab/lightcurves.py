@@ -24,6 +24,7 @@ __all__ = [
     "BFlags",
     "Lightcurve",
     "LightcurvePoint",
+    "LightcurveSelector",
     "LocalBinRejectFlags",
     "PlateQualityFlags",
 ]
@@ -307,7 +308,7 @@ class LightcurvePoint(Row):
         )
 
 
-class Selector:
+class LightcurveSelector:
     """
     A magic object to help enable lightcurve filtering.
     """
@@ -402,26 +403,26 @@ class Lightcurve(Table):
         return new
 
     @property
-    def match(self) -> Selector:
-        return Selector(self, lambda _sel, m: m)
+    def match(self) -> LightcurveSelector:
+        return LightcurveSelector(self, lambda _sel, m: m)
 
     @property
-    def count(self) -> Selector:
-        return Selector(self, lambda _sel, m: m.sum())
+    def count(self) -> LightcurveSelector:
+        return LightcurveSelector(self, lambda _sel, m: m.sum())
 
     def _apply_keep_only(self, _selector, flags, verbose=True) -> "Lightcurve":
         return self._copy_subset(flags, verbose)
 
     @property
-    def keep_only(self) -> Selector:
-        return Selector(self, self._apply_keep_only)
+    def keep_only(self) -> LightcurveSelector:
+        return LightcurveSelector(self, self._apply_keep_only)
 
     def _apply_drop(self, _selector, flags, verbose=True) -> "Lightcurve":
         return self._copy_subset(~flags, verbose)
 
     @property
-    def drop(self) -> Selector:
-        return Selector(self, self._apply_drop)
+    def drop(self) -> LightcurveSelector:
+        return LightcurveSelector(self, self._apply_drop)
 
     def _apply_split_by(self, _selector, flags) -> Tuple["Lightcurve", "Lightcurve"]:
         lc_left = self._copy_subset(flags, False)
@@ -429,10 +430,12 @@ class Lightcurve(Table):
         return (lc_left, lc_right)
 
     @property
-    def split_by(self) -> Selector:
-        return Selector(self, self._apply_split_by)
+    def split_by(self) -> LightcurveSelector:
+        return LightcurveSelector(self, self._apply_split_by)
 
-    def _make_reject_selector(self, tag: str, verbose: bool, apply_func) -> Selector:
+    def _make_reject_selector(
+        self, tag: str, verbose: bool, apply_func
+    ) -> LightcurveSelector:
         if self._rejection_tags is None:
             self._rejection_tags = {}
 
@@ -440,13 +443,15 @@ class Lightcurve(Table):
 
         if bitnum0 is None:
             bitnum0 = len(self._rejection_tags)
+            if bitnum0 > 63:
+                raise Exception("you cannot have more than 64 distinct rejection tags")
 
             if verbose:
                 print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
 
             self._rejection_tags[tag] = bitnum0
 
-        selector = Selector(self, apply_func)
+        selector = LightcurveSelector(self, apply_func)
         selector._bitnum0 = bitnum0
         return selector
 
@@ -460,13 +465,13 @@ class Lightcurve(Table):
                 f"Marked {n_after - n_before} new rows as rejected; {n_after} total are rejected"
             )
 
-    def reject(self, tag: str, verbose: bool = True) -> Selector:
+    def reject(self, tag: str, verbose: bool = True) -> LightcurveSelector:
         return self._make_reject_selector(tag, verbose, self._apply_reject)
 
     def _apply_reject_unless(self, selector, flags, verbose: bool = True):
         return self._apply_reject(selector, ~flags, verbose)
 
-    def reject_unless(self, tag: str, verbose: bool = True) -> Selector:
+    def reject_unless(self, tag: str, verbose: bool = True) -> LightcurveSelector:
         return self._make_reject_selector(tag, verbose, self._apply_reject_unless)
 
     def summary(self):
