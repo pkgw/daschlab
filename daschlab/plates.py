@@ -5,6 +5,7 @@
 Lists of plates.
 """
 
+from datetime import datetime
 import io
 import os
 import re
@@ -18,11 +19,13 @@ from astropy.io import fits
 from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
+from astropy.utils.masked import Masked
 from astropy.wcs import WCS
 from bokeh.plotting import figure, show
 import cairo
 import numpy as np
 from PIL import Image
+from pytz import timezone
 from pywwt.layers import ImageLayer
 import requests
 
@@ -124,6 +127,14 @@ class PlateSelector:
         m = self._plates["local_id"] == local_id
         return self._apply(self, m, **kwargs)
 
+    def scanned(self, **kwargs) -> "Plates":
+        m = ~self._plates["scannum"].mask
+        return self._apply(self, m, **kwargs)
+
+    def wcs_solved(self, **kwargs) -> "Plates":
+        m = self._plates["wcssource"] == "imwcs"
+        return self._apply(self, m, **kwargs)
+
     def series(self, series: str, **kwargs) -> "Plates":
         m = self._plates["series"] == series
         return self._apply(self, m, **kwargs)
@@ -151,6 +162,12 @@ class PlateSelector:
             )
             m |= this_one
 
+        return self._apply(self, m, **kwargs)
+
+    def jyear_range(self, jyear_min: float, jyear_max: float, **kwargs) -> "Plates":
+        m = (self._plates["obs_date"].jyear >= jyear_min) & (
+            self._plates["obs_date"].jyear <= jyear_max
+        )
         return self._apply(self, m, **kwargs)
 
 
@@ -314,6 +331,13 @@ def _query_plates(
     center: SkyCoord,
     radius: u.Quantity,
 ) -> Plates:
+    return _postproc_plates(_get_plate_cols(center, radius))
+
+
+def _get_plate_cols(
+    center: SkyCoord,
+    radius: u.Quantity,
+) -> Plates:
     radius = Angle(radius)
 
     # API-based query
@@ -351,17 +375,87 @@ def _query_plates(
                     if ctype is not None:
                         cdata.append(ctype(row))
 
-    # Postprocess
+    return dict(t for t in zip(colnames, coldata) if t[1] is not None)
 
-    input_cols = dict(t for t in zip(colnames, coldata) if t[1] is not None)
 
-    table = Plates()
+def _dasch_date_as_datetime(date: str) -> Optional[datetime]:
+    from pytz import timezone
+
+    if not date:
+        return None
+
+    p = date.split("T")
+    p[1] = p[1].replace("-", ":")
+    naive = datetime.fromisoformat("T".join(p))
+    tz = timezone("US/Eastern")
+    return tz.localize(naive)
+
+
+def _dasch_dates_as_time_array(dates) -> Time:
+    """
+    Convert an iterable of DASCH dates to an Astropy Time array, with masking of
+    missing values.
+    """
+    # No one had any photographic plates in 1800! But the exact value here
+    # doesn't matter; we just need something accepted by the datetime-Time
+    # constructor.
+    invalid_dt = datetime(1800, 1, 1)
+
+    invalid_indices = []
+    dts = []
+
+    for i, dstr in enumerate(dates):
+        dt = _dasch_date_as_datetime(dstr)
+        if dt is None:
+            invalid_indices.append(i)
+            dt = invalid_dt
+
+        dts.append(dt)
+
+    times = Time(dts, format="datetime")
+
+    for i in invalid_indices:
+        times[i] = np.ma.masked
+
+    # If we don't do this, Astropy is unable to roundtrip masked times out of
+    # the ECSV format.
+    times.format = "isot"
+
+    return times
+
+
+def _postproc_plates(input_cols) -> Plates:
+    table = Plates(masked=True)
+
+    scannum = np.array(input_cols["scannum"], dtype=np.int8)
+    mask = scannum == -1
+
+    # create a unitless (non-Quantity) column, unmasked:
+    all_c = lambda c, dt: np.array(input_cols[c], dtype=dt)
+
+    # unitless column, masked:
+    mc = lambda c, dt: np.ma.array(input_cols[c], mask=mask, dtype=dt)
+
+    # Quantity column, unmasked:
+    all_q = lambda c, dt, unit: u.Quantity(np.array(input_cols[c], dtype=dt), unit)
+
+    # Quantity column, masked:
+    mq = lambda c, dt, unit: Masked(
+        u.Quantity(np.array(input_cols[c], dtype=dt), unit), mask
+    )
+
+    # Quantity column, masked, with extra flag values to mask:
+    def extra_mq(c, dt, unit, flagval):
+        a = np.array(input_cols[c], dtype=dt)
+        extra_mask = mask | (a == flagval)
+        return Masked(u.Quantity(a, unit), extra_mask)
+
     table["series"] = input_cols["series"]
     table["platenum"] = np.array(input_cols["platenum"], dtype=np.uint32)
-    table["scannum"] = np.array(input_cols["scannum"], dtype=np.uint8)
-    table["mosnum"] = np.array(input_cols["mosnum"], dtype=np.uint8)
+    table["scannum"] = mc("scannum", np.uint8)
+    table["mosnum"] = mc("mosnum", np.uint8)
     table["expnum"] = np.array(input_cols["expnum"], dtype=np.uint8)
-    table["solnum"] = np.array(input_cols["solnum"], dtype=np.uint8)
+    table["solnum"] = mc("solnum", np.uint8)
     table["class"] = input_cols["class"]
     table["pos"] = SkyCoord(
         ra=input_cols["ra"] * u.deg,
@@ -371,10 +465,10 @@ def _query_plates(
     table["exptime"] = np.array(input_cols["exptime"], dtype=np.float32) * u.minute
     table["obs_date"] = Time(input_cols["jd"], format="jd")
     table["wcssource"] = input_cols["wcssource"]
-    table["scan_date"] = Time(input_cols["scandate"], format="isot")
-    table["mos_date"] = Time(input_cols["mosdate"], format="isot")
-    table["rotation_deg"] = np.array(input_cols["rotation"], dtype=np.uint16)
-    table["binflags"] = np.array(input_cols["binflags"], dtype=np.uint8)
+    table["scan_date"] = _dasch_dates_as_time_array(input_cols["scandate"])
+    table["mos_date"] = _dasch_dates_as_time_array(input_cols["mosdate"])
+    table["rotation_deg"] = mc("rotation", np.uint16)
+    table["binflags"] = mc("binflags", np.uint8)
     table["center_distance"] = (
         np.array(input_cols["centerdist"], dtype=np.float32) * u.cm
     )

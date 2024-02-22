@@ -25,6 +25,7 @@ setup_args = dict(
         "numpy>=1.20",
         "pillow>=10",
         "pycairo>=1.20",
+        "pytz>=2024",
         "pywwt>=0.23",
         "reproject>=0.13",
         "requests>=2",

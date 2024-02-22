@@ -19,6 +19,8 @@ from bokeh.plotting import figure, show
 import numpy as np
 import requests
 
+from .series import SERIES, SeriesKind
+
 __all__ = [
     "AFlags",
     "BFlags",
@@ -375,11 +377,23 @@ class LightcurveSelector:
         return self._apply(self, m, **kwargs)
 
     def brighter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
-        m = self._lc["magcal_magdep"] < m
+        m = self._lc["magcal_magdep"] < cutoff_mag
         return self._apply(self, m, **kwargs)
 
     def detected_and_fainter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
-        m = self._lc["magcal_magdep"] > m
+        m = self._lc["magcal_magdep"] > cutoff_mag
+        return self._apply(self, m, **kwargs)
+
+    def narrow(self, **kwargs) -> "Lightcurve":
+        m = [SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]]
+        return self._apply(self, m, **kwargs)
+
+    def patrol(self, **kwargs) -> "Lightcurve":
+        m = [SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]]
+        return self._apply(self, m, **kwargs)
+
+    def meteor(self, **kwargs) -> "Lightcurve":
+        m = [SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]]
         return self._apply(self, m, **kwargs)
 
 
