@@ -5,16 +5,24 @@
 Lists of plates.
 """
 
+import io
+import os
 import re
+import time
 from typing import Dict, Iterable, Optional, Tuple
 from urllib.parse import urlencode
+import warnings
 
 from astropy.coordinates import Angle, SkyCoord
+from astropy.io import fits
 from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
+from astropy.wcs import WCS
 from bokeh.plotting import figure, show
+import cairo
 import numpy as np
+from PIL import Image
 from pywwt.layers import ImageLayer
 import requests
 
@@ -162,6 +170,7 @@ class Plates(Table):
             nn = len(new)
             print(f"Dropped {len(self) - nn} rows; {nn} remaining")
 
+        new._sess = self._sess
         new._rejection_tags = self._rejection_tags
         return new
 
@@ -297,6 +306,9 @@ class Plates(Table):
         self._layers[local_id] = il
         return il
 
+    def export_cutouts_to_pdf(self, pdfpath: str, **kwargs):
+        _pdf_export(pdfpath, self._sess, self, **kwargs)
+
 
 def _query_plates(
     center: SkyCoord,
@@ -374,3 +386,301 @@ def _query_plates(
     table["reject"] = np.zeros(len(table), dtype=np.uint64)
 
     return table
+
+
+# PDF export
+
+
+PAGE_WIDTH = 612  # US Letter paper size, points
+PAGE_HEIGHT = 792
+MARGIN = 36  # points; 0.5 inch
+CUTOUT_WIDTH = PAGE_WIDTH - 2 * MARGIN
+DSF = 4  # downsampling factor
+LINE_HEIGHT = 14  # points
+
+
+def _data_to_image(data: np.array) -> Image:
+    """
+    Here we implement the grayscale method used by the DASCH website. The input is a
+    float array and the output is a PIL/Pillow image.
+
+    1. linearly rescale data clipping bottom 2% and top 1% of pixel values
+       (pnmnorm)
+    2. scale to 0-255 (pnmdepth)
+    3. invert scale (pnminvert)
+    4. flip vertically (pnmflip; done prior to this function)
+    5. apply a 2.2 gamma scale (pnmgamma)
+
+    We reorder a few steps here to simplify the computations. The results aren't
+    exactly identical to what you get across the NetPBM steps but they're
+    visually indistinguishable in most cases.
+    """
+
+    dmin, dmax = np.percentile(data, [2, 99])
+
+    if dmax == dmin:
+        data = np.zeros(data.shape, dtype=np.uint8)
+    else:
+        data = np.clip(data, dmin, dmax)
+        data = (data - dmin) / (dmax - dmin)
+        data = 1 - data
+        data **= 1 / 2.2
+        data *= 255
+        data = data.astype(np.uint8)
+
+    return Image.fromarray(data, mode="L")
+
+
+def _pdf_export(
+    pdfpath: str,
+    sess: "Session",
+    plates: Plates,
+    refcat_stdmag_limit: Optional[float] = None,
+):
+    PLOT_CENTERING_CIRCLE = True
+    PLOT_SOURCES = True
+
+    center_pos = sess.query().pos_as_skycoord()
+    ra_text = center_pos.ra.to_string(unit=u.hour, sep=":", precision=3)
+    dec_text = center_pos.dec.to_string(
+        unit=u.degree, sep=":", alwayssign=True, precision=2
+    )
+    center_text = f"{ra_text} {dec_text} J2000"
+
+    name = sess.query().name
+    if name:
+        center_text = f"{name} = {center_text}"
+
+    # First thing, ensure that we have all of our cutouts
+
+    print(
+        f"Ensuring that we have cutouts for {len(plates)} plates, this may take a while ..."
+    )
+    t0 = time.time()
+
+    for plate in plates:
+        if not sess.cutout(plate):
+            raise Exception(
+                f"unable to fetch cutout for plate LocalId {plate['local_id']}"
+            )
+
+    elapsed = time.time() - t0
+    print(f"... completed in {elapsed:.0f} seconds")
+
+    # Set up refcat sources (could add filtering, etc.)
+
+    if PLOT_SOURCES:
+        refcat = sess.refcat()
+
+        if refcat_stdmag_limit is not None:
+            refcat = refcat[~refcat["stdmag"].mask]
+            refcat = refcat[refcat["stdmag"] <= refcat_stdmag_limit]
+
+        cat_pos = refcat["pos"]
+        print(f"Overlaying {len(refcat)} refcat sources")
+
+    # We're ready to start rendering pages
+
+    t0 = time.time()
+    print("Rendering pages ...")
+
+    n_pages = 0
+    label_y0 = None
+    wcs = None
+
+    with cairo.PDFSurface(pdfpath, PAGE_WIDTH, PAGE_HEIGHT) as pdf:
+        for plate in plates:
+            local_id = plate["local_id"]
+            series = plate["series"]
+            platenum = plate["platenum"]
+            mosnum = plate["mosnum"]
+            plateclass = plate["class"] or "(none)"
+            jd = plate["obs_date"].jd
+            epoch = plate["obs_date"].jyear
+            # platescale = plate["plate_scale"]
+            exptime = plate["exptime"]
+            center_distance_cm = plate["center_distance"]
+            edge_distance_cm = plate["edge_distance"]
+
+            fits_relpath = sess.cutout(plate)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+
+                with fits.open(str(sess.path(fits_relpath))) as hdul:
+                    data = hdul[0].data
+                    astrom_type = hdul[0].header["D_ASTRTY"]
+
+                    if wcs is None:
+                        wcs = WCS(hdul[0].header)
+
+                        # Calculate the size of a 20 arcsec circle
+                        x0 = data.shape[1] / 2
+                        y0 = data.shape[0] / 2
+                        c0 = wcs.pixel_to_world(x0, y0)
+
+                        if c0.dec.deg >= 0:
+                            c1 = c0.directional_offset_by(180 * u.deg, 1 * u.arcmin)
+                        else:
+                            c1 = c0.directional_offset_by(0 * u.deg, 1 * u.arcmin)
+
+                        x1, y1 = wcs.world_to_pixel(c1)
+                        ref_radius = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
+                        ref_radius /= DSF  # account for the downsampling
+
+            # downsample to reduce data volume
+            height = data.shape[0] // DSF
+            width = data.shape[1] // DSF
+            h_trunc = height * DSF
+            w_trunc = width * DSF
+            data = data[:h_trunc, :w_trunc].reshape((height, DSF, width, DSF))
+            data = data.mean(axis=(1, 3))
+
+            # Important! FITS is rendered "bottoms-up" so we must flip vertically for
+            # the RGB imagery, while will be top-down!
+            data = data[::-1]
+
+            # Our data volumes get out of control unless we JPEG-compress
+            pil_image = _data_to_image(data)
+            jpeg_encoded = io.BytesIO()
+            pil_image.save(jpeg_encoded, format="JPEG")
+            jpeg_encoded.seek(0)
+            jpeg_encoded = jpeg_encoded.read()
+
+            img = cairo.ImageSurface(cairo.FORMAT_A8, width, height)
+            img.set_mime_data("image/jpeg", jpeg_encoded)
+
+            cr = cairo.Context(pdf)
+            cr.save()
+            cr.translate(MARGIN, MARGIN)
+            f = CUTOUT_WIDTH / width
+            cr.scale(f, f)
+            cr.set_source_surface(img, 0, 0)
+            cr.paint()
+            cr.restore()
+
+            # reference circle overlay
+
+            if PLOT_CENTERING_CIRCLE:
+                cr.save()
+                cr.set_source_rgb(0.5, 0.5, 0.9)
+                cr.set_line_width(1)
+                cr.arc(
+                    CUTOUT_WIDTH / 2 + MARGIN,  # x
+                    CUTOUT_WIDTH / 2 + MARGIN,  # y -- hardcoding square aspect ratio
+                    ref_radius * f,  # radius
+                    0.0,  # angle 1
+                    2 * np.pi,  # angle 2
+                )
+                cr.stroke()
+                cr.restore()
+
+            # Source overlay
+
+            if PLOT_SOURCES:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    this_pos = cat_pos.apply_space_motion(
+                        Time(epoch, format="decimalyear")
+                    )
+
+                this_px = np.array(wcs.world_to_pixel(this_pos))
+                this_px /= DSF  # account for our downsampling
+                x = this_px[0]
+                y = this_px[1]
+                y = height - y  # account for FITS/JPEG y axis parity flip
+                ok = (x > -0.5) & (x < width - 0.5) & (y > -0.5) & (y < height - 0.5)
+
+                cr.save()
+                cr.set_source_rgb(0, 1, 0)
+                cr.set_line_width(1)
+
+                for i in range(len(ok)):
+                    if not ok[i]:
+                        continue
+
+                    ix = x[i] * f + MARGIN
+                    iy = y[i] * f + MARGIN
+                    cr.move_to(ix - 4, iy - 4)
+                    cr.line_to(ix + 4, iy + 4)
+                    cr.stroke()
+                    cr.move_to(ix - 4, iy + 4)
+                    cr.line_to(ix + 4, iy - 4)
+                    cr.stroke()
+
+                cr.restore()
+
+            # Labeling
+
+            if label_y0 is None:
+                label_y0 = 2 * MARGIN + height * f
+
+            with warnings.catch_warnings():
+                # Lots of ERFA complaints for our old years
+                warnings.simplefilter("ignore")
+                t_iso = Time(jd, format="jd").isot
+
+            cr.save()
+            cr.select_font_face(
+                "mono", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL
+            )
+            linenum = 0
+
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.save()
+            cr.set_font_size(18)
+            cr.show_text(
+                f"Plate {series.upper()}{platenum:05d} - localId {local_id:5d} - {epoch:.5f}"
+            )
+            cr.restore()
+            linenum += 1.5
+
+            # XXX hardcoding params
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.show_text(f"Image: center {center_text}")
+            linenum += 1
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.show_text("  halfsize 600 arcsec, orientation N up, E left")
+            linenum += 1
+
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.show_text(
+                f"Mosaic {series:>4}{platenum:05d}_{mosnum:02d}: "
+                f"astrom {astrom_type.upper():3} "
+                f"class {plateclass:12} "
+                f"exp {exptime:5.1f} (min) "
+                # f"scale {platescale:7.2f} (arcsec/mm)"
+            )
+            linenum += 1
+
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            url = f"http://dasch.rc.fas.harvard.edu/showplate.php?series={series}&plateNumber={platenum}"
+            cr.tag_begin(cairo.TAG_LINK, f"uri='{url}'")
+            cr.set_source_rgb(0, 0, 1)
+            cr.show_text(url)
+            cr.set_source_rgb(0, 0, 0)
+            cr.tag_end(cairo.TAG_LINK)
+            linenum += 1
+
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.show_text(f"Midpoint: epoch {epoch:.5f} = HJD {jd:.6f} = {t_iso}")
+            linenum += 1
+
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.show_text(
+                f"Cutout location: {center_distance_cm:4.1f} cm from center, {edge_distance_cm:4.1f} cm from edge"
+            )
+            linenum += 1
+            cr.restore()
+
+            pdf.show_page()
+            n_pages += 1
+
+            if n_pages % 100 == 0:
+                print(f"- page {n_pages} - {fits_relpath}")
+
+    elapsed = time.time() - t0
+    info = os.stat(pdfpath)
+    print(
+        f"... completed in {elapsed:.0f} seconds and saved to `{pdfpath}` ({info.st_size / 1024**2:.1f} MiB)"
+    )

@@ -374,6 +374,14 @@ class LightcurveSelector:
         m = self._lc["series"] == series
         return self._apply(self, m, **kwargs)
 
+    def brighter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
+        m = self._lc["magcal_magdep"] < m
+        return self._apply(self, m, **kwargs)
+
+    def detected_and_fainter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
+        m = self._lc["magcal_magdep"] > m
+        return self._apply(self, m, **kwargs)
+
 
 class Lightcurve(Table):
     """
