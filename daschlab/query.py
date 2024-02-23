@@ -17,6 +17,8 @@ __all__ = ["SessionQuery"]
 @dataclass_json
 @dataclass
 class SessionQuery:
+    """A query"""
+
     name: str  # empty if none associated
     ra_deg: float
     dec_deg: float

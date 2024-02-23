@@ -1,0 +1,14 @@
+include LICENSE
+include *.md
+include *.yml
+
+recursive-include daschlab
+
+graft docs
+prune docs/_build
+
+global-exclude *~
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude .git
+global-exclude .ipynb_checkpoints

@@ -401,9 +401,9 @@ class Lightcurve(Table):
     """
     Cheat sheet:
 
-    - `date` is HJD midpoint
-    - `magcal_magdep` is preferred calibrated phot measurement
-    - legacy plotter error bar is `magcal_local_rms` * `error_bar_factor`, the
+    - ``date`` is HJD midpoint
+    - ``magcal_magdep`` is preferred calibrated phot measurement
+    - legacy plotter error bar is ``magcal_local_rms` * `error_bar_factor``, the
       latter being set to match the error bars to the empirical RMS, if this
       would shrink the error bars
     """

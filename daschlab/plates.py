@@ -10,7 +10,7 @@ import io
 import os
 import re
 import time
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple, Union
 from urllib.parse import urlencode
 import warnings
 
@@ -31,7 +31,7 @@ import requests
 
 from .series import SERIES, SeriesKind
 
-__all__ = ["Plates", "PlateRow", "PlateSelector"]
+__all__ = ["Plates", "PlateReferenceType", "PlateRow", "PlateSelector"]
 
 
 _API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/queryplates.php"
@@ -87,6 +87,9 @@ class PlateRow(Row):
 
     def plate_id(self) -> str:
         return f"{self['series']}{self['platenum']:05d}_{self['mosnum']:02d}"
+
+
+PlateReferenceType = Union[PlateRow, int]
 
 
 class PlateSelector:
@@ -299,7 +302,7 @@ class Plates(Table):
         show(p)
         return p
 
-    def show(self, plate_ref: "PlateReferenceType") -> ImageLayer:
+    def show(self, plate_ref: PlateReferenceType) -> ImageLayer:
         plate = self._sess._resolve_plate_reference(plate_ref)
 
         if self._layers is None:
@@ -379,8 +382,6 @@ def _get_plate_cols(
 
 
 def _dasch_date_as_datetime(date: str) -> Optional[datetime]:
-    from pytz import timezone
-
     if not date:
         return None
 

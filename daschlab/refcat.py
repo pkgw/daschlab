@@ -6,7 +6,7 @@ Data extracted from one of the DASCH reference catalogs in the query region.
 """
 
 from copy import copy
-from typing import Optional
+from typing import Literal, Optional, Union
 from urllib.parse import urlencode
 
 from astropy.coordinates import Angle, SkyCoord
@@ -18,7 +18,7 @@ import numpy as np
 import requests
 from pywwt.layers import TableLayer
 
-__all__ = ["RefcatSources"]
+__all__ = ["RefcatSources", "RefcatSourceRow", "SourceReferenceType"]
 
 
 _API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/querycat.php"
@@ -45,8 +45,11 @@ _COLTYPES = {
 
 
 class RefcatSourceRow(Row):
-    def lightcurve(self) -> "daschlab.Lightcurve":
+    def lightcurve(self) -> "daschlab.lightcurves.Lightcurve":
         return self._table._sess.lightcurve(self)
+
+
+SourceReferenceType = Union[RefcatSourceRow, int, Literal["click"]]
 
 
 class RefcatSources(Table):

@@ -71,10 +71,6 @@ def _formatsc(sc: SkyCoord) -> str:
     return f"{r} {d}"
 
 
-SourceReferenceType = Union[RefcatSourceRow, int, Literal["click"]]
-PlateReferenceType = Union[PlateRow, int]
-
-
 class Session:
     """A daschlab analysis session."""
 
@@ -121,25 +117,31 @@ class Session:
         # Recover refcat?
 
         try:
-            self._refcat = RefcatSources.read(str(self.path("refcat.ecsv")), format="ascii.ecsv")
+            self._refcat = RefcatSources.read(
+                str(self.path("refcat.ecsv")), format="ascii.ecsv"
+            )
             self._refcat._sess = self
         except FileNotFoundError:
             self._refcat = None
 
             if self._query is not None:
                 self._info(
-                   f"- Refcat not yet fetched - run something like `{self._my_var_name()}.select_refcat('apass')`"
+                    f"- Refcat not yet fetched - run something like `{self._my_var_name()}.select_refcat('apass')`"
                 )
         else:
             if len(self._refcat):
-                self._info(f"- Refcat: {len(self._refcat)} sources from `{self._refcat['refcat'][0]}`")
+                self._info(
+                    f"- Refcat: {len(self._refcat)} sources from `{self._refcat['refcat'][0]}`"
+                )
             else:
                 self._info("- Refcat: present but empty")
 
         # Recover plates?
 
         try:
-            self._plates = Plates.read(str(self.path("plates.ecsv")), format="ascii.ecsv")
+            self._plates = Plates.read(
+                str(self.path("plates.ecsv")), format="ascii.ecsv"
+            )
             self._plates._sess = self
         except FileNotFoundError:
             self._plates = None
@@ -170,7 +172,9 @@ class Session:
         if self._internal_simg:
             return
 
-        raise InteractiveError("sorry, this functionality requires a direct login to the DASCH HPC cluster")
+        raise InteractiveError(
+            "sorry, this functionality requires a direct login to the DASCH HPC cluster"
+        )
 
     @contextmanager
     def _save_atomic(self, *relpath_pieces: Iterable[str], mode: str = "wt"):
@@ -226,7 +230,9 @@ class Session:
 
     def query(self) -> SessionQuery:
         if self._query is None:
-            raise InteractiveError(f"you must select the target first - run something like `{self._my_var_name()}.select_target(name='Algol')`")
+            raise InteractiveError(
+                f"you must select the target first - run something like `{self._my_var_name()}.select_target(name='Algol')`"
+            )
         return self._query
 
     def select_refcat(self, name: str) -> "Session":
@@ -235,14 +241,19 @@ class Session:
         """
 
         if name not in SUPPORTED_REFCATS:
-            raise InteractiveError(f"invalid refcat name {name!r}; must be one of: {' '.join(SUPPORTED_REFCATS)}")
+            raise InteractiveError(
+                f"invalid refcat name {name!r}; must be one of: {' '.join(SUPPORTED_REFCATS)}"
+            )
 
         if self._refcat is not None:
             if not len(self._refcat):
-                self._warn(f"on-disk refcat is empty; assuming that it is for refcat `{name}`")
+                self._warn(
+                    f"on-disk refcat is empty; assuming that it is for refcat `{name}`"
+                )
             elif self._refcat["refcat"][0] != name:
                 raise InteractiveError(
-                    f"on-disk refcat name `{self._refcat["refcat"][0]}` does not agree with in-code name `{name}`")
+                    f"on-disk refcat name `{self._refcat['refcat'][0]}` does not agree with in-code name `{name}`"
+                )
 
             return self
 
@@ -263,13 +274,15 @@ class Session:
 
         elapsed = time.time() - t0
         self._info(
-            f"- Retrieved {len(self._refcat)} sources from reference catalog \"{name}\" in {elapsed:.0f} seconds and saved as `refcat.ecsv`"
+            f'- Retrieved {len(self._refcat)} sources from reference catalog "{name}" in {elapsed:.0f} seconds and saved as `refcat.ecsv`'
         )
         return self
 
     def refcat(self) -> RefcatSources:
         if self._refcat is None:
-            raise InteractiveError(f"you must select the refcat first - run something like `{self._my_var_name()}.select_refcat('apass')`")
+            raise InteractiveError(
+                f"you must select the refcat first - run something like `{self._my_var_name()}.select_refcat('apass')`"
+            )
         return self._refcat
 
     def plates(self) -> Plates:
@@ -301,16 +314,20 @@ class Session:
         )
         return self._plates
 
-    def _resolve_src_reference(self, src_ref: SourceReferenceType) -> RefcatSourceRow:
+    def _resolve_src_reference(self, src_ref: "SourceReferenceType") -> RefcatSourceRow:
         if isinstance(src_ref, str) and src_ref == "click":
             info = self.wwt().most_recent_source
 
             if info is None:
-                raise InteractiveError("trying to pick a source based on the latest WWT click, but nothing has been clicked")
+                raise InteractiveError(
+                    "trying to pick a source based on the latest WWT click, but nothing has been clicked"
+                )
 
             src_id = info["layerData"].get("local_id")
             if src_id is None:
-                raise InteractiveError("trying to pick a source based on the latest WWT click, but the clicked source has no \"local_id\" metadatum")
+                raise InteractiveError(
+                    'trying to pick a source based on the latest WWT click, but the clicked source has no "local_id" metadatum'
+                )
 
             return self.refcat()[int(src_id)]
 
@@ -320,7 +337,7 @@ class Session:
         assert isinstance(src_ref, RefcatSourceRow)
         return src_ref
 
-    def lightcurve(self, src_ref: SourceReferenceType) -> Lightcurve:
+    def lightcurve(self, src_ref: "SourceReferenceType") -> Lightcurve:
         src = self._resolve_src_reference(src_ref)
 
         # We're going to need this later; emit the output now.
@@ -359,7 +376,9 @@ class Session:
         lc["plate_local_id"] = -1
 
         for p in lc:
-            p["plate_local_id"] = plate_lookup.get((p["series"], p["platenum"], p["mosnum"]), -1)
+            p["plate_local_id"] = plate_lookup.get(
+                (p["series"], p["platenum"], p["mosnum"]), -1
+            )
 
         # All done
 
@@ -372,14 +391,14 @@ class Session:
         )
         return lc
 
-    def _resolve_plate_reference(self, plate_ref: PlateReferenceType) -> PlateRow:
+    def _resolve_plate_reference(self, plate_ref: "PlateReferenceType") -> PlateRow:
         if isinstance(plate_ref, int):
             return self.plates()[plate_ref]
 
         assert isinstance(plate_ref, PlateRow)
         return plate_ref
 
-    def cutout(self, plate_ref: PlateReferenceType) -> Optional[str]:
+    def cutout(self, plate_ref: "PlateReferenceType") -> Optional[str]:
         from astropy.io import fits
 
         plate = self._resolve_plate_reference(plate_ref)
@@ -397,7 +416,9 @@ class Session:
         t0 = time.time()
         print("- Querying API ...", flush=True)
         center = self.query().pos_as_skycoord()
-        fits_data = _query_cutout(plate["series"], plate["platenum"], plate["mosnum"], center)
+        fits_data = _query_cutout(
+            plate["series"], plate["platenum"], plate["mosnum"], center
+        )
         print(f"- Fetched {len(fits_data)} bytes in {time.time()-t0:.0f} seconds")
 
         # Add a bunch of headers using the metadata that we have
@@ -442,7 +463,9 @@ class Session:
             self._wwt.foreground_opacity = 0
 
         if self._query is not None:
-            self._wwt.center_on_coordinates(self._query.pos_as_skycoord(), fov=REFCAT_RADIUS * 1.2)
+            self._wwt.center_on_coordinates(
+                self._query.pos_as_skycoord(), fov=REFCAT_RADIUS * 1.2
+            )
 
     def wwt(self) -> WWTJupyterWidget:
         if self._wwt is None:
@@ -461,3 +484,9 @@ def open_session(
     """
     _maybe_install_custom_exception_formatter()
     return Session(root, interactive=interactive, _internal_simg=_internal_simg)
+
+
+# Typing stuff
+
+from .refcat import SourceReferenceType
+from .plates import PlateReferenceType
