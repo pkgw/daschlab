@@ -49,6 +49,7 @@ setup_args = dict(
         "astropy>=6.0",
         "bokeh>=3.3",
         "dataclasses-json>=0.6",
+        "ipykernel>=6",
         "numpy>=1.20",
         "pillow>=10",
         "pycairo>=1.20",
