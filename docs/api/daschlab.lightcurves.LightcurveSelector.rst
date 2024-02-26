@@ -6,6 +6,12 @@ LightcurveSelector
 .. autoclass:: LightcurveSelector
    :show-inheritance:
 
+   .. rubric:: Attributes Summary
+
+   .. autosummary::
+
+      ~LightcurveSelector.not_
+
    .. rubric:: Methods Summary
 
    .. autosummary::
@@ -25,6 +31,10 @@ LightcurveSelector
       ~LightcurveSelector.series
       ~LightcurveSelector.undetected
       ~LightcurveSelector.where
+
+   .. rubric:: Attributes Documentation
+
+   .. autoattribute:: not_
 
    .. rubric:: Methods Documentation
 

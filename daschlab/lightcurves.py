@@ -520,6 +520,32 @@ class LightcurveSelector:
         self._lc = lc
         self._apply = apply
 
+    def _apply_not(self, selector: "LightcurveSelector", flags, **kwargs):
+        return self._apply(selector, ~flags, **kwargs)
+
+    @property
+    def not_(self) -> "LightcurveSelector":
+        """
+        Get a selector that will act on an inverted row selection.
+
+        Examples
+        ========
+        Create a lightcurve subset containing nondetections and detections that
+        are *not* within 10 arcsec of the mean source position::
+
+            from astropy import units as u
+
+            lc = sess.lightcurve(some_local_id)
+            far = lc.keep_only.not_.sep_below(10 * u.arcsec)
+
+        In general, the function of this modifier is such that::
+
+            lc.ACTION.not_.CONDITION()
+            # should be equivalent to:
+            lc.ACTION.where(~lc.match.CONDITION())
+        """
+        return LightcurveSelector(self._lc, self._apply_not)
+
     def where(self, row_mask: np.ndarray, **kwargs) -> "Lightcurve":
         """
         Act on exactly the specified list of rows.
@@ -527,26 +553,26 @@ class LightcurveSelector:
         Parameters
         ==========
         row_mask : boolean `numpy.ndarray`
-          A boolean array of exactly the size of the input lightcurve, with true
-          values indicating rows that should be acted upon.
+            A boolean array of exactly the size of the input lightcurve, with true
+            values indicating rows that should be acted upon.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only points that are from A-series
         plates with detections brighter than 13th magnitude::
 
-          lc = sess.lightcurve(some_local_id)
-          subset = lc.keep_only.where(
-              lc.match.series("a") & lc.match.brighter(13)
-          )
+            lc = sess.lightcurve(some_local_id)
+            subset = lc.keep_only.where(
+                lc.match.series("a") & lc.match.brighter(13)
+            )
         """
         return self._apply(self, row_mask, **kwargs)
 
@@ -557,19 +583,20 @@ class LightcurveSelector:
         Parameters
         ==========
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only detections::
 
-          detns = sess.lightcurve(some_local_id).keep_only.detected()
+            lc = sess.lightcurve(some_local_id)
+            detns = lc.keep_only.detected()
         """
         m = ~self._lc["magcal_magdep"].mask
         return self._apply(self, m, **kwargs)
@@ -581,19 +608,20 @@ class LightcurveSelector:
         Parameters
         ==========
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only nondetections::
 
-          nondetns = sess.lightcurve(some_local_id).keep_only.undetected()
+            lc = sess.lightcurve(some_local_id)
+            nondetns = lc.keep_only.undetected()
         """
         m = self._lc["magcal_magdep"].mask
         return self._apply(self, m, **kwargs)
@@ -605,19 +633,20 @@ class LightcurveSelector:
         Parameters
         ==========
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only rejected rows::
 
-          rejects = sess.lightcurve(some_local_id).keep_only.rejected()
+            lc = sess.lightcurve(some_local_id)
+            rejects = lc.keep_only.rejected()
         """
         m = self._lc["reject"] != 0
         return self._apply(self, m, **kwargs)
@@ -629,26 +658,27 @@ class LightcurveSelector:
         Parameters
         ==========
         tag : `str`
-          The tag used to identify the rejection reason
+            The tag used to identify the rejection reason
         strict : optional `bool`, default `False`
-          If true, and the specified tag has not been defined, raise an exception.
-          Otherwise, the action will be invoked with no rows selected.
+            If true, and the specified tag has not been defined, raise an
+            exception. Otherwise, the action will be invoked with no rows
+            selected.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
-        Create a lightcurve subset containing only rows rejected with the "astrom"
-        tag:
+        Create a lightcurve subset containing only rows rejected with the
+        "astrom" tag:
 
-          lc = sess.lightcurve(some_local_id)
-          astrom_rejects = lc.keep_only.rejected_with("astrom")
+            lc = sess.lightcurve(some_local_id)
+            astrom_rejects = lc.keep_only.rejected_with("astrom")
         """
         bitnum0 = None
 
@@ -671,19 +701,20 @@ class LightcurveSelector:
         Parameters
         ==========
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only non-rejected detections::
 
-          good = sess.lightcurve(some_local_id).keep_only.nonrej_detected()
+            lc = sess.lightcurve(some_local_id)
+            good = lc.keep_only.nonrej_detected()
 
         Notes
         =====
@@ -704,24 +735,25 @@ class LightcurveSelector:
         Parameters
         ==========
         sep_limit : optional `astropy.units.Quantity`, default 20 arcsec
-          The separation limit. This should be an angular quantity.
+            The separation limit. This should be an angular quantity.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only detections within 10 arcsec
         of the mean source position::
 
-          from astropy import units as u
+            from astropy import units as u
 
-          near = sess.lightcurve(some_local_id).keep_only.sep_below(10 * u.arcsec)
+            lc = sess.lightcurve(some_local_id)
+            near = lc.keep_only.sep_below(10 * u.arcsec)
 
         Notes
         =====
@@ -741,27 +773,28 @@ class LightcurveSelector:
         Parameters
         ==========
         aflags : `int` or `AFlags`
-          The flag or flags to check for. If this value contains multiple
-          non-zero bits, a row will be selected if its AFLAGS contain
-          *any* of the specified bits.
+            The flag or flags to check for. If this value contains multiple
+            non-zero bits, a row will be selected if its AFLAGS contain
+            *any* of the specified bits.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only rows with the specified flags::
 
-          from astropy import units as u
-          from daschlab.lightcurves import AFlags
+            from astropy import units as u
+            from daschlab.lightcurves import AFlags
 
-          filter = AFlags.LARGE_DRAD | AFlags.RADIAL_BIN_9
-          bad = sess.lightcurve(some_local_id).keep_only.any_aflags(filter)
+            lc = sess.lightcurve(some_local_id)
+            filter = AFlags.LARGE_DRAD | AFlags.RADIAL_BIN_9
+            bad = lc.keep_only.any_aflags(filter)
         """
         m = (self._lc["aflags"] & aflags) != 0
         return self._apply(self, m, **kwargs)
@@ -773,22 +806,23 @@ class LightcurveSelector:
         Parameters
         ==========
         local_id : `int`
-          The local ID to select.
+            The local ID to select.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only the chronologically first
         row::
 
-          first = sess.lightcurve(some_local_id).keep_only.local_id(0)
+            lc = sess.lightcurve(some_local_id)
+            first = lc.keep_only.local_id(0)
 
         Notes
         =====
@@ -805,21 +839,22 @@ class LightcurveSelector:
         Parameters
         ==========
         series : `str`
-          The plate series to select.
+            The plate series to select.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only points from the MC series::
 
-          mcs = sess.lightcurve(some_local_id).keep_only.series("mc")
+            lc = sess.lightcurve(some_local_id)
+            mcs = lc.keep_only.series("mc")
         """
         m = self._lc["series"] == series.lower()
         return self._apply(self, m, **kwargs)
@@ -831,22 +866,23 @@ class LightcurveSelector:
         Parameters
         ==========
         cutoff_mag : `float`
-          The cutoff magnitude.
+            The cutoff magnitude.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only points brighter than 13th
         magnitude::
 
-          bright = sess.lightcurve(some_local_id).keep_only.brighter(13)
+            lc = sess.lightcurve(some_local_id)
+            bright = lc.keep_only.brighter(13)
 
         Notes
         =====
@@ -863,22 +899,23 @@ class LightcurveSelector:
         Parameters
         ==========
         cutoff_mag : `float`
-          The cutoff magnitude.
+            The cutoff magnitude.
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only points fainter than 13th
         magnitude::
 
-          faint = sess.lightcurve(some_local_id).keep_only.detected_and_fainter(13)
+            lc = sess.lightcurve(some_local_id)
+            faint = lc.keep_only.detected_and_fainter(13)
 
         Notes
         =====
@@ -895,20 +932,21 @@ class LightcurveSelector:
         Parameters
         ==========
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only points from narrow-field
         telescopes::
 
-          narrow = sess.lightcurve(some_local_id).keep_only.narrow()
+            lc = sess.lightcurve(some_local_id)
+            narrow = lc.keep_only.narrow()
         """
         m = [SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]]
         return self._apply(self, m, **kwargs)
@@ -920,20 +958,21 @@ class LightcurveSelector:
         Parameters
         ==========
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only points from patrol
         telescopes::
 
-          patrol = sess.lightcurve(some_local_id).keep_only.patrol()
+            lc = sess.lightcurve(some_local_id)
+            patrol = lc.keep_only.patrol()
         """
         m = [SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]]
         return self._apply(self, m, **kwargs)
@@ -945,20 +984,21 @@ class LightcurveSelector:
         Parameters
         ==========
         **kwargs
-          Parameters forwarded to the action.
+            Parameters forwarded to the action.
 
         Returns
         =======
         Usually, another `Lightcurve`
-          However, different actions may return different types. For instance,
-          the `Lightcurve.count` action will return an integer.
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
 
         Examples
         ========
         Create a lightcurve subset containing only points from meteor
         telescopes::
 
-          meteor = sess.lightcurve(some_local_id).keep_only.meteor()
+            lc = sess.lightcurve(some_local_id)
+            meteor = lc.keep_only.meteor()
         """
         m = [SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]]
         return self._apply(self, m, **kwargs)
