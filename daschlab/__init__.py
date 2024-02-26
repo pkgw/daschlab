@@ -18,16 +18,17 @@ systematic study of the sky on 100-year time scales.
 This website contains only the **Python API reference material**. For tutorials
 and howtos, see **[a documentation site that I haven’t created yet!]**.
 
-The most important item provided by this package is the :class:`Session` class,
-which defines a daschlab analysis session. The recommended way to obtain a
-session is to call the :func:`open_session` function::
+This package is designed for primarily interactive usage in a JupyterLab
+environment. The most important item provided in this module is the `Session`
+class, which defines a daschlab analysis session. Obtain a session by calling
+the `open_session()` function::
 
    from daschlab import open_session
 
    sess = open_session(".")
 
 Virtually all subsequent analysis occurs through actions connected to an
-initialized :class:`Session` instance.
+initialized `Session` instance.
 """
 
 from contextlib import contextmanager
@@ -74,6 +75,18 @@ PLATES_RADIUS: Angle = Angle(10 * u.arcsec)
 
 
 class InteractiveError(Exception):
+    """
+    A error class for errors that should be shown to a human user without
+    traceback context.
+
+    If you initialize an interactive daschlab session in a Jupyter/IPython
+    environment, this package will install a custom exception handler that
+    customizes the display of `InteractiveError` instances. Rather than printing
+    a full traceback, just the exception message will be printed. This is
+    intended to produce easier-to-read output during interactive analysis
+    sessions.
+    """
+
     pass
 
 
@@ -97,7 +110,39 @@ def _formatsc(sc: SkyCoord) -> str:
 
 
 class Session:
-    """A daschlab analysis session."""
+    """A daschlab analysis session.
+
+    Do not construct instances of this class directly. Instead, use the function
+    `daschlab.open_session()`, which may perform additional, helpful
+    initializations of the analysis environment.
+
+    Once you have obtained a `Session` instance, you should configure its key
+    parameters with a series of function calls resembling the following::
+
+        from daschlab import open_session
+
+        sess = open_session(".")
+        sess.select_target("V* RY Cnc")
+        sess.select_refcat("apass")
+
+        # after opening the WWT JupyterLab application:
+        await sess.connect_to_wwt()
+
+        # You will generally also want to run:
+        from bokeh.io import output_notebook
+        output_notebook()
+
+    After this initialization is complete, you can obtain various data products
+    relevant to your session with the following methods:
+
+    - `~Session.refcat()` to access a table of DASCH catalog sources near
+      your target
+    - `~Session.plates()` to access a table of DASCH plates overlapping
+      your target
+    - `~Session.lightcurve()` to access lightcurves for the catalog sources
+    - `~Session.cutout()` to download plate cutout images centered on
+      your target
+    """
 
     _root: pathlib.Path
     _interactive: bool = True
@@ -217,13 +262,47 @@ class Session:
         os.rename(f.name, self.path(*relpath_pieces))
 
     def path(self, *pieces: Iterable[str]) -> pathlib.Path:
-        """Generate a path within this session."""
+        """Generate a filesystem path within this session.
+
+        Parameters
+        ==========
+        *pieces : sequence of `str`
+          Path components
+
+        Returns
+        =======
+        A `pathlib.Path` relative to this session's "root" directory.
+        """
         return self._root.joinpath(*pieces)
 
     def select_target(self, name: str = None) -> "Session":
         """
-        Specify the center of the session's target area, by resolving a source
-        name with Simbad/Sesame.
+        Specify the center of the session's target area.
+
+        Parameters
+        ==========
+        name : `str`
+          The Simbad-resolvable name of this session's target area.
+
+        Returns
+        =======
+        *self*, for chaining convenience
+
+        Notes
+        =====
+        The first time you call this method for a given session, it will perform
+        a Simbad/Sesame API query to resolve the target name and save the
+        resulting information in a file named ``query.json``. Subsequent calls
+        (i.e., ones made with the ``query.json`` file already existing) will
+        merely check for consistency.
+
+        After calling this method, you may use `~Session.query()` to obtain the
+        cached information about your session’s target. This merely provides the
+        RA and dec.
+
+        This method could easily support queries based on RA/Dec rather than
+        name resolution. If that’s functionality you would like, please consider
+        filing a pull request.
         """
         if not name:
             raise ValueError("`name` must be specified")
@@ -254,6 +333,18 @@ class Session:
         return self
 
     def query(self) -> SessionQuery:
+        """
+        Obtain the session "query" specifying the center of the analysis region.
+
+        Returns
+        =======
+        A `daschlab.query.SessionQuery` instance
+
+        Notes
+        =====
+        You must call `~Session.select_target()` before calling this method.
+        """
+
         if self._query is None:
             raise InteractiveError(
                 f"you must select the target first - run something like `{self._my_var_name()}.select_target(name='Algol')`"
@@ -263,6 +354,32 @@ class Session:
     def select_refcat(self, name: str) -> "Session":
         """
         Specify which DASCH reference catalog to use.
+
+        Parameters
+        ==========
+        name : `str`
+          The name of the reference catalog. Supported values are ``"apass"``
+          and ``"atlas"``, with ``"apass"`` being strongly recommended.
+
+        Returns
+        =======
+        *self*, for chaining convenience
+
+        Notes
+        =====
+        You must have called `~Session.select_target()` before calling this
+        method.
+
+        The first time you call this method for a given session, it will perform
+        a DASCH API query to fetch information from the specified catalog,
+        saving the resulting information in a file named ``refcat.ecsv``.
+        Subsequent calls (i.e., ones made with the ``refcat.ecsv`` file already
+        existing) will merely check for consistency.
+
+        After calling this method, you may use `~Session.refcat()` to obtain the
+        reference catalog data table. This table is a
+        `daschlab.refcat.RefcatSources` object, which is a subclass of
+        `astropy.table.Table`.
         """
 
         if name not in SUPPORTED_REFCATS:
@@ -304,6 +421,20 @@ class Session:
         return self
 
     def refcat(self) -> RefcatSources:
+        """
+        Obtain the table of reference catalog sources associated with this
+        session.
+
+        Returns
+        =======
+        A `daschlab.refcat.RefcatSources` instance.
+
+        Notes
+        =====
+        You must call `~Session.select_target()` and `~Session.select_refcat()`
+        before calling this method.
+        """
+
         if self._refcat is None:
             raise InteractiveError(
                 f"you must select the refcat first - run something like `{self._my_var_name()}.select_refcat('apass')`"
@@ -312,7 +443,22 @@ class Session:
 
     def plates(self) -> Plates:
         """
-        Ensure that we have a list of plates relevant to this session.
+        Obtain the table of plates overlapping the session target area.
+
+        Returns
+        =======
+        A `daschlab.plates.Plates` instance.
+
+        Notes
+        =====
+        You must call `~Session.select_target()` and `~Session.select_refcat()`
+        before calling this method.
+
+        The first time you call this method for a given session, it will perform
+        a DASCH API query to fetch information from the plate database, saving
+        the resulting information in a file named ``plates.ecsv``. Subsequent
+        calls (i.e., ones made with the ``plates.ecsv`` file already existing)
+        will merely check for consistency and load the saved file.
         """
 
         if self._plates is not None:
@@ -363,6 +509,43 @@ class Session:
         return src_ref
 
     def lightcurve(self, src_ref: "SourceReferenceType") -> Lightcurve:
+        """
+        Obtain a table of lightcurve data for the specified source.
+
+        Parameters
+        ==========
+        src_ref : `int` or `~daschlab.refcat.RefcatSourceRow` or ``"click"``.
+          If this argument is an integer, it is interpreted as the "local ID" of
+          a row in the reference catalog. Local IDs are assigned in order of
+          distance from the query center, so a value of ``0`` fetches the
+          lightcurve for the catalog source closest to the query target. This is
+          probably what you want.
+
+          If this argument is an instance of `~daschlab.refcat.RefcatSourceRow`,
+          the lightcurve for the specified source is obtained.
+
+          If this argument is the literal string value ``"click"``, the
+          lightcurve for the catalog source that was most recently clicked in
+          the WWT app is obtained. In particular, the most recently-clicked
+          source must have a piece of metadata tagged ``local_id``, which is
+          interpreted as a refcat local ID.
+
+        Returns
+        =======
+        A `daschlab.lightcurves.Lightcurve` instance.
+
+        Notes
+        =====
+        You must call `~Session.select_target()` and `~Session.select_refcat()`
+        before calling this method.
+
+        The first time you call this method for a given session, it will perform
+        a DASCH API query to fetch information from the lightcurve database,
+        saving the resulting information in a file inside the session's
+        ``lightcurves`` subdirectory. Subsequent calls (i.e., ones made with the
+        data file already existing) will merely check for consistency and load
+        the saved file.
+        """
         src = self._resolve_src_reference(src_ref)
 
         # We're going to need this later; emit the output now.
@@ -424,6 +607,58 @@ class Session:
         return plate_ref
 
     def cutout(self, plate_ref: "PlateReferenceType") -> Optional[str]:
+        """
+        Obtain a FITS cutout for the specified plate.
+
+        Parameters
+        ==========
+        plate_ref : `int` or `~daschlab.plates.PlateRow`
+          If this argument is an integer, it is interpreted as the "local ID" of
+          a row in the plates table.
+
+          If this argument is an instance of `~daschlab.plates.PlateRow`, the
+          cutout for the specified plate is obtained.
+
+        Returns
+        =======
+        A `str` or `None`.
+          If the former, the cutout was successfully fetched; the value is a
+          path to a local FITS file containing the cutout data, *relative to
+          the session root*. If the latter, a cutout could not be obtained.
+          This could happen if the plate has not been scanned, among other
+          reasons.
+
+        Examples
+        ========
+        Load the cutout of the chronologically-first calibrated observation of
+        the target field (the plate list is in chronological order)::
+
+          from astropy.io import fits
+
+          solved_plates = sess.plates().keep_only.wcs_solved()
+          plate = solved_plates[0]
+
+          relpath = sess.cutout(plate)
+          assert relpath, f"could not get cutout of {plate.plate_id()}"
+
+          # str() needed here because Astropy does not accept Path objects:
+          hdu_list = fits.open(str(sess.path(relpath))
+
+        Notes
+        =====
+        You must call `~Session.select_target()` and `~Session.plates()` before
+        calling this method.
+
+        The first time you call this method for a given session, it will perform
+        a DASCH API query to fetch the cutout, saving the resulting data in a
+        file inside the session's ``cutouts`` subdirectory. Subsequent calls
+        (i.e., ones made with the data file already existing) will merely check
+        for consistency and load the saved file.
+
+        See Also
+        ========
+        daschlab.plates.Plates.show : to show a cutout in the WWT view
+        """
         from astropy.io import fits
 
         plate = self._resolve_plate_reference(plate_ref)
@@ -478,6 +713,18 @@ class Session:
         return dest_relpath
 
     async def connect_to_wwt(self):
+        """
+        Connect this session to the WorldWide Telescope JupyterLab app.
+
+        Notes
+        =====
+        This is an asynchonous function and should generally be called as::
+
+           await sess.connect_to_wwt()
+
+        After calling this function, the session will be able to automatically
+        display various catalogs and images in the WWT viewer.
+        """
         if self._wwt is not None:
             return
 
@@ -493,6 +740,18 @@ class Session:
             )
 
     def wwt(self) -> WWTJupyterWidget:
+        """
+        Obtain the WorldWide Telescope "widget" handle associated with this session.
+
+        Returns
+        =======
+        `pywwt.jupyter.WWTJupyterWidget`
+          The WWT widget object.
+
+        Notes
+        =====
+        You must call `~Session.connect_to_wwt()` before you can use this method.
+        """
         if self._wwt is None:
             raise InteractiveError(
                 f"you must connect to WWT asynchronously first - run `await {self._my_var_name()}.connect_to_wwt()`"
@@ -506,8 +765,32 @@ def open_session(
 ) -> Session:
     """
     Open or create a new daschlab analysis session.
+
+    Parameters
+    ==========
+    root : optional `str`, default ``"."``
+      A path to a directory that will contain all of the data files associated
+      with this analysis session.
+
+    interactive : optional `bool`, default True
+      Whether this is an interactive analysis session. If True, various warnings
+      and errors will be printed under the assumption that a human will read
+      them, as opposed to raising exceptions with proper tracebacks.
+
+    Returns
+    =======
+    An initialized `Session` instance.
+
+    Notes
+    =====
+    It is possible to construct a `Session` directly, but this function may
+    perform additional, helpful initialization of the analysis environment. We
+    can’t stop you from calling the `Session` constructor directly, but there
+    should be no reason to do so.
     """
-    _maybe_install_custom_exception_formatter()
+    if interactive:
+        _maybe_install_custom_exception_formatter()
+
     return Session(root, interactive=interactive, _internal_simg=_internal_simg)
 
 
