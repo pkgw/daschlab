@@ -6,6 +6,68 @@ DASCH lightcurve data.
 
 The main class provided by this module is `Lightcurve`, instances of which can
 be obtained with the `daschlab.Session.lightcurve()` method.
+
+.. _lc-rejection:
+
+Rejecting Data Points
+=====================
+
+`Lightcurve` tables come with a uint64 column named ``"reject"`` that is always
+initialized with zeros. If you are analyzing a lightcurve and wish to discard
+various bad data points from it, you should set their ``"reject"`` values to
+something non-zero. Most lightcurve analysis functions will automatically drop
+points with non-zero ``"reject"`` values.
+
+
+.. _lc-filtering:
+
+Filtering and Subsetting
+========================
+
+`Lightcurve` objects are instances of the `astropy.table.Table` class, and in
+your data analysis you can use all of the usual `~astropy.table.Table`-related
+methods and functions that are available. In addition, the `Lightcurve` class
+provides a convenient set of tools for subsetting and filtering data.
+
+These tools take the form of paired “actions” and “selections”. The syntax for
+using them is as follows::
+
+    lc = sess.lightcurve(some_local_id)
+
+    # Get a subset of the data containing only the detections
+    # brighter than 13th mag. The action is `keep_only` and
+    # the selection is `brighter`.
+    bright = lc.keep_only.brighter(13)
+
+    # From that subset, remove points from the "ai" series.
+    # The action is `drop` and the selection is `series`.
+    no_ai = bright.drop.series("ai")
+
+    # Count remaining points not from narrow-field telescopes.
+    # The action is `count` and the selection is `narrow`, and
+    # `not_` is a modifier with the intuitive behavior.
+    n = no_ai.count.not_.narrow()
+
+These operations can be conveniently chained together. More complex boolean
+logic can be implemented with the `~LightcurveSelector.where` selection and the
+`~Lightcurve.match` action.
+
+In terms of implementation, an item like ``lc.keep_only`` is a property that
+returns a helper `LightcurveSelector` object, which is what actually implements
+methods such as `~LightcurveSelector.brighter()`. The selector object helps pair
+the desired action with the desired selection while maintaining a convenient
+code syntax.
+
+DASCH lightcurves often contain many nondetections (upper limits), which means
+that you may need to be careful about selection logic. For instance::
+
+    lc = sess.lightcurve(some_local_id)
+    n1 = lc.count.brighter(13)
+    n2 = lc.count.not_.detected_and_fainter(13)
+
+    # This will NOT generally hold, because n2 will include
+    # nondetections while n1 will not.
+    assert n1 == n2
 """
 
 from enum import IntFlag
@@ -1006,6 +1068,23 @@ class LightcurveSelector:
 
 class Lightcurve(Table):
     """
+    A DASCH lightcurve data table.
+
+    A `Lightcurve` is a subclass of `astropy.table.Table` containing DASCH
+    lightcurve data and associated lightcurve-specific methods. You can use all
+    of the usual methods and properties made available by the
+    `astropy.table.Table` class. Items provided by the `~astropy.table.Table`
+    class are not documented here.
+
+    You should not construct `Lightcurve` instances directly. Instead, obtain
+    lightcurves using the `daschlab.Session.lightcurve()` method.
+
+    **Columns are not documented here!** They are (**FIXME: will be**)
+    documented more thoroughly in the DASCH data description pages.
+
+    See :ref:`the module-level documentation <lc-filtering>` for a summary of the
+    filtering and subsetting functionality provided by this class.
+
     Cheat sheet:
 
     - ``date`` is HJD midpoint
@@ -1033,10 +1112,26 @@ class Lightcurve(Table):
 
     @property
     def match(self) -> LightcurveSelector:
+        """
+        An :ref:`action <lc-filtering>` returning a boolean array identifying selected rows.
+
+        Unlike many actions, this does not return a new `Lightcurve`. It can be used
+        to implement arbitrary boolean logic within the action/selection framework::
+
+            lc = sess.lightcurve(some_local_id)
+            subset = lc.keep_only.where(
+                lc.match.series("a") & lc.match.brighter(13)
+            )
+        """
         return LightcurveSelector(self, lambda _sel, m: m)
 
     @property
     def count(self) -> LightcurveSelector:
+        """
+        An :ref:`action <lc-filtering>` returning the number of selected rows
+
+        Unlike many actions, this returns an `int`, not a new `Lightcurve`
+        """
         return LightcurveSelector(self, lambda _sel, m: m.sum())
 
     def _apply_keep_only(self, _selector, flags, verbose=True) -> "Lightcurve":
@@ -1044,6 +1139,9 @@ class Lightcurve(Table):
 
     @property
     def keep_only(self) -> LightcurveSelector:
+        """
+        An :ref:`action <lc-filtering>` returning a `Lightcurve` copy containing only the selected rows.
+        """
         return LightcurveSelector(self, self._apply_keep_only)
 
     def _apply_drop(self, _selector, flags, verbose=True) -> "Lightcurve":
@@ -1051,6 +1149,10 @@ class Lightcurve(Table):
 
     @property
     def drop(self) -> LightcurveSelector:
+        """
+        An :ref:`action <lc-filtering>` returning a `Lightcurve` copy dropping
+        the selected rows; all non-selected rows are retained.
+        """
         return LightcurveSelector(self, self._apply_drop)
 
     def _apply_split_by(self, _selector, flags) -> Tuple["Lightcurve", "Lightcurve"]:
@@ -1060,6 +1162,23 @@ class Lightcurve(Table):
 
     @property
     def split_by(self) -> LightcurveSelector:
+        """
+        An :ref:`action <lc-filtering>` returning two `Lightcurve` copies,
+        partitioning by the selection.
+
+        Unlike many actions, this returns a tuple of two new `Lightcurve`
+        instances, not just one. The first returned instance contains only
+        the selected points; the second instance returns all others. This
+        can be useful for statistical comparisons::
+
+            from astropy import units as u
+
+            lc = sess.lightcurve(some_local_id)
+            neardet, fardet = lc.keep_only.nonrej_detected().split_by.sep_below(20 * u.arcsec)
+            near_std = neardet["magcal_magdep"].std()
+            far_std = neardet["magcal_magdep"].std()
+
+        """
         return LightcurveSelector(self, self._apply_split_by)
 
     def _make_reject_selector(
