@@ -582,8 +582,9 @@ class LightcurveSelector:
         self._lc = lc
         self._apply = apply
 
-    def _apply_not(self, selector: "LightcurveSelector", flags, **kwargs):
-        return self._apply(selector, ~flags, **kwargs)
+    def _apply_not(self, flags, **kwargs):
+        "This isn't a lambda because it needs to accept and relay **kwargs"
+        return self._apply(~flags, **kwargs)
 
     @property
     def not_(self) -> "LightcurveSelector":
@@ -636,7 +637,7 @@ class LightcurveSelector:
                 lc.match.series("a") & lc.match.brighter(13)
             )
         """
-        return self._apply(self, row_mask, **kwargs)
+        return self._apply(row_mask, **kwargs)
 
     def detected(self, **kwargs) -> "Lightcurve":
         """
@@ -661,7 +662,7 @@ class LightcurveSelector:
             detns = lc.keep_only.detected()
         """
         m = ~self._lc["magcal_magdep"].mask
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def undetected(self, **kwargs) -> "Lightcurve":
         """
@@ -686,7 +687,7 @@ class LightcurveSelector:
             nondetns = lc.keep_only.undetected()
         """
         m = self._lc["magcal_magdep"].mask
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def rejected(self, **kwargs) -> "Lightcurve":
         """
@@ -711,7 +712,7 @@ class LightcurveSelector:
             rejects = lc.keep_only.rejected()
         """
         m = self._lc["reject"] != 0
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def rejected_with(self, tag: str, strict: bool = False, **kwargs) -> "Lightcurve":
         """
@@ -754,7 +755,7 @@ class LightcurveSelector:
         else:
             m = np.zeros(len(self._lc), dtype=bool)
 
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def nonrej_detected(self, **kwargs) -> "Lightcurve":
         """
@@ -785,7 +786,7 @@ class LightcurveSelector:
         `LightcurveSelector.rejected()`.
         """
         m = ~self._lc["magcal_magdep"].mask & (self._lc["reject"] == 0)
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def sep_below(
         self, sep_limit: u.Quantity = 20 * u.arcsec, **kwargs
@@ -826,7 +827,7 @@ class LightcurveSelector:
         mp = self._lc.mean_pos()
         seps = mp.separation(self._lc["pos"])
         m = seps < sep_limit
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def any_aflags(self, aflags: int, **kwargs) -> "Lightcurve":
         """
@@ -859,7 +860,7 @@ class LightcurveSelector:
             bad = lc.keep_only.any_aflags(filter)
         """
         m = (self._lc["aflags"] & aflags) != 0
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def local_id(self, local_id: int, **kwargs) -> "Lightcurve":
         """
@@ -892,7 +893,7 @@ class LightcurveSelector:
         ever match at most one row.
         """
         m = self._lc["local_id"] == local_id
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def series(self, series: str, **kwargs) -> "Lightcurve":
         """
@@ -919,7 +920,7 @@ class LightcurveSelector:
             mcs = lc.keep_only.series("mc")
         """
         m = self._lc["series"] == series.lower()
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def brighter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
         """
@@ -952,7 +953,7 @@ class LightcurveSelector:
         less-than rather than less-than-or-equals comparison.
         """
         m = self._lc["magcal_magdep"] < cutoff_mag
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def detected_and_fainter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
         """
@@ -985,7 +986,7 @@ class LightcurveSelector:
         greater-than rather than greater-than-or-equals comparison.
         """
         m = self._lc["magcal_magdep"] > cutoff_mag
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def narrow(self, **kwargs) -> "Lightcurve":
         """
@@ -1011,7 +1012,7 @@ class LightcurveSelector:
             narrow = lc.keep_only.narrow()
         """
         m = [SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]]
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def patrol(self, **kwargs) -> "Lightcurve":
         """
@@ -1037,7 +1038,7 @@ class LightcurveSelector:
             patrol = lc.keep_only.patrol()
         """
         m = [SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]]
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def meteor(self, **kwargs) -> "Lightcurve":
         """
@@ -1063,7 +1064,7 @@ class LightcurveSelector:
             meteor = lc.keep_only.meteor()
         """
         m = [SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]]
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
 
 class Lightcurve(Table):
@@ -1123,7 +1124,7 @@ class Lightcurve(Table):
                 lc.match.series("a") & lc.match.brighter(13)
             )
         """
-        return LightcurveSelector(self, lambda _sel, m: m)
+        return LightcurveSelector(self, lambda m: m)
 
     @property
     def count(self) -> LightcurveSelector:
@@ -1132,9 +1133,9 @@ class Lightcurve(Table):
 
         Unlike many actions, this returns an `int`, not a new `Lightcurve`
         """
-        return LightcurveSelector(self, lambda _sel, m: m.sum())
+        return LightcurveSelector(self, lambda m: m.sum())
 
-    def _apply_keep_only(self, _selector, flags, verbose=True) -> "Lightcurve":
+    def _apply_keep_only(self, flags, verbose=True) -> "Lightcurve":
         return self._copy_subset(flags, verbose)
 
     @property
@@ -1144,7 +1145,7 @@ class Lightcurve(Table):
         """
         return LightcurveSelector(self, self._apply_keep_only)
 
-    def _apply_drop(self, _selector, flags, verbose=True) -> "Lightcurve":
+    def _apply_drop(self, flags, verbose=True) -> "Lightcurve":
         return self._copy_subset(~flags, verbose)
 
     @property
@@ -1155,7 +1156,7 @@ class Lightcurve(Table):
         """
         return LightcurveSelector(self, self._apply_drop)
 
-    def _apply_split_by(self, _selector, flags) -> Tuple["Lightcurve", "Lightcurve"]:
+    def _apply_split_by(self, flags) -> Tuple["Lightcurve", "Lightcurve"]:
         lc_left = self._copy_subset(flags, False)
         lc_right = self._copy_subset(~flags, False)
         return (lc_left, lc_right)
@@ -1181,9 +1182,12 @@ class Lightcurve(Table):
         """
         return LightcurveSelector(self, self._apply_split_by)
 
-    def _make_reject_selector(
-        self, tag: str, verbose: bool, apply_func
-    ) -> LightcurveSelector:
+    def _process_reject_tag(self, tag: str, verbose: bool) -> int:
+        if not tag:
+            raise Exception(
+                'you must specify a rejection tag with a `tag="text"` keyword argument'
+            )
+
         if self._rejection_tags is None:
             self._rejection_tags = {}
 
@@ -1199,13 +1203,12 @@ class Lightcurve(Table):
 
             self._rejection_tags[tag] = bitnum0
 
-        selector = LightcurveSelector(self, apply_func)
-        selector._bitnum0 = bitnum0
-        return selector
+        return bitnum0
 
-    def _apply_reject(self, selector, flags, verbose: bool = True):
+    def _apply_reject(self, flags, tag: str = None, verbose: bool = True):
+        bitnum0 = self._process_reject_tag(tag, verbose)
         n_before = (self["reject"] != 0).sum()
-        self["reject"][flags] |= 1 << selector._bitnum0
+        self["reject"][flags] |= 1 << bitnum0
         n_after = (self["reject"] != 0).sum()
 
         if verbose:
@@ -1213,14 +1216,16 @@ class Lightcurve(Table):
                 f"Marked {n_after - n_before} new rows as rejected; {n_after} total are rejected"
             )
 
-    def reject(self, tag: str, verbose: bool = True) -> LightcurveSelector:
-        return self._make_reject_selector(tag, verbose, self._apply_reject)
+    @property
+    def reject(self) -> LightcurveSelector:
+        return LightcurveSelector(self, self._apply_reject)
 
-    def _apply_reject_unless(self, selector, flags, verbose: bool = True):
-        return self._apply_reject(selector, ~flags, verbose)
+    def _apply_reject_unless(self, flags, tag: str = None, verbose: bool = True):
+        return self._apply_reject(~flags, tag, verbose)
 
-    def reject_unless(self, tag: str, verbose: bool = True) -> LightcurveSelector:
-        return self._make_reject_selector(tag, verbose, self._apply_reject_unless)
+    @property
+    def reject_unless(self) -> LightcurveSelector:
+        return LightcurveSelector(self, self._apply_reject_unless)
 
     def summary(self):
         print(f"Total number of rows: {len(self)}")
