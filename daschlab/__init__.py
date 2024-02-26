@@ -2,7 +2,32 @@
 # Licensed under the MIT License
 
 """
-The main ``daschlab`` package.
+The toplevel Python module of the `daschlab`_ package.
+
+.. _daschlab: https://daschlab.readthedocs.io/
+
+daschlab_ is a Python package that assists with astrophysical analysis of data
+from DASCH_, the effort to scan Harvard College Observatory’s collection of
+`astronomical glass plates`_. This irreplaceable resource provides a means for
+systematic study of the sky on 100-year time scales.
+
+.. _daschlab: https://daschlab.readthedocs.io/
+.. _DASCH: https://dasch.cfa.harvard.edu/
+.. _astronomical glass plates: https://platestacks.cfa.harvard.edu/
+
+This website contains only the **Python API reference material**. For tutorials
+and howtos, see **[a documentation site that I haven’t created yet!]**.
+
+The most important item provided by this package is the :class:`Session` class,
+which defines a daschlab analysis session. The recommended way to obtain a
+session is to call the :func:`open_session` function::
+
+   from daschlab import open_session
+
+   sess = open_session(".")
+
+Virtually all subsequent analysis occurs through actions connected to an
+initialized :class:`Session` instance.
 """
 
 from contextlib import contextmanager
@@ -13,7 +38,7 @@ import pathlib
 import sys
 import tempfile
 import time
-from typing import Dict, FrozenSet, Iterable, Literal, Optional, Union
+from typing import Dict, FrozenSet, Iterable, Optional
 import warnings
 
 from astropy.coordinates import Angle, SkyCoord
