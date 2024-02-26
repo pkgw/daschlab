@@ -1218,6 +1218,24 @@ class Lightcurve(Table):
 
     @property
     def reject(self) -> LightcurveSelector:
+        """
+        An :ref:`action <lc-filtering>` modifying the lightcurve in-place,
+        rejecting the selected rows.
+
+        Usage is as follows::
+
+            lc = sess.lightcurve(some_local_id)
+
+            # Mark all points from meteor telescopes as rejected:
+            lc.reject.meteor(tag="meteor")
+
+        The ``tag`` keyword argument to the selector is mandatory. It specifies
+        a short, arbitrary "tag" documenting the reason for rejection. Each
+        unique tag is associated with a binary bit of the ``"reject"`` column,
+        and these bits are logically OR'ed together as rejections are established.
+        The maximum number of distinct rejection tags is 64, since the ``"reject"``
+        column is stored as a 64-bit integer.
+        """
         return LightcurveSelector(self, self._apply_reject)
 
     def _apply_reject_unless(self, flags, tag: str = None, verbose: bool = True):
@@ -1225,9 +1243,33 @@ class Lightcurve(Table):
 
     @property
     def reject_unless(self) -> LightcurveSelector:
+        """
+        An :ref:`action <lc-filtering>` modifying the lightcurve in-place,
+        rejecting rows not matching the selection.
+
+        Usage is as follows::
+
+            lc = sess.lightcurve(some_local_id)
+
+            # Mark all points *not* from narrow-field telescopes as rejected:
+            lc.reject_unless.narrow(tag="lowrez")
+
+            # This is equivalent to:
+            lc.reject.not_.narrow(tag="lowrez")
+
+        The ``tag`` keyword argument to the selector is mandatory. It specifies
+        a short, arbitrary "tag" documenting the reason for rejection. Each
+        unique tag is associated with a binary bit of the ``"reject"`` column,
+        and these bits are logically OR'ed together as rejections are established.
+        The maximum number of distinct rejection tags is 64, since the ``"reject"``
+        column is stored as a 64-bit integer.
+        """
         return LightcurveSelector(self, self._apply_reject_unless)
 
     def summary(self):
+        """
+        Print a brief textual summary of the lightcurve contents.
+        """
         print(f"Total number of rows: {len(self)}")
 
         nonrej = self.drop.rejected(verbose=False)
@@ -1242,12 +1284,47 @@ class Lightcurve(Table):
             print(f"Mean/RMS mag: {mm:.3f} ± {rm:.3f}")
 
     def mean_pos(self) -> SkyCoord:
+        """
+        Obtain the mean source position from the lightcurve points.
+
+        Returns
+        =======
+        `astropy.coordinates.SkyCoord`
+            The mean position of the non-rejected detections
+
+        Notes
+        =====
+        Average is done in degrees naively, so if your source has RA values of
+        both 0 and 360, you might get seriously bogus results.
+        """
         detns = self.keep_only.nonrej_detected(verbose=False)
         mra = detns["pos"].ra.deg.mean()
         mdec = detns["pos"].dec.deg.mean()
         return SkyCoord(mra, mdec, unit=u.deg, frame="icrs")
 
     def plot(self, x_axis="year") -> figure:
+        """
+        Plot the lightcurve using default settings.
+
+        Parameters
+        ==========
+        x_axis : optional `str`, default ``"year"``
+            The name of the column to use for the X axis. ``"year"`` is a
+            synthetic column calculated on-the-fly from the ``"date"`` column,
+            corresponding to the ``jyear`` property of the `astropy.time.Time`
+            object.
+
+        Returns
+        =======
+        `bokeh.plotting.figure`
+            A plot.
+
+        Notes
+        =====
+        The function `bokeh.io.show` (imported as ``bokeh.plotting.show``) is
+        called on the figure before it is returned, so you don't need to do that
+        yourself.
+        """
         detect, limit = self.drop.rejected(verbose=False).split_by.detected()
 
         with warnings.catch_warnings():
@@ -1291,6 +1368,27 @@ class Lightcurve(Table):
         return p
 
     def scatter(self, x_axis: str, y_axis: str) -> figure:
+        """
+        Make a Bokeh scatter plot of lightcurve data
+
+        Parameters
+        ==========
+        x_axis : `str`
+            The name of the column to use for the X axis.
+        y_axis : `str`
+            The name of the column to use for the Y axis.
+
+        Returns
+        =======
+        `bokeh.plotting.figure`
+            A plot.
+
+        Notes
+        =====
+        The function `bokeh.io.show` (imported as ``bokeh.plotting.show``) is
+        called on the figure before it is returned, so you don't need to do that
+        yourself.
+        """
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
             tooltips=[

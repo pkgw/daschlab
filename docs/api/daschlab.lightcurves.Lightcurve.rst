@@ -14,6 +14,8 @@ Lightcurve
       ~Lightcurve.drop
       ~Lightcurve.keep_only
       ~Lightcurve.match
+      ~Lightcurve.reject
+      ~Lightcurve.reject_unless
       ~Lightcurve.split_by
 
    .. rubric:: Methods Summary
@@ -22,8 +24,6 @@ Lightcurve
 
       ~Lightcurve.mean_pos
       ~Lightcurve.plot
-      ~Lightcurve.reject
-      ~Lightcurve.reject_unless
       ~Lightcurve.scatter
       ~Lightcurve.summary
 
@@ -33,13 +33,13 @@ Lightcurve
    .. autoattribute:: drop
    .. autoattribute:: keep_only
    .. autoattribute:: match
+   .. autoattribute:: reject
+   .. autoattribute:: reject_unless
    .. autoattribute:: split_by
 
    .. rubric:: Methods Documentation
 
    .. automethod:: mean_pos
    .. automethod:: plot
-   .. automethod:: reject
-   .. automethod:: reject_unless
    .. automethod:: scatter
    .. automethod:: summary
