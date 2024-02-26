@@ -2,9 +2,12 @@
 # Licensed under the MIT License
 
 """
-Handling cutouts.
+Handling DASCH cutouts.
 
-Barely any functionality as of yet.
+This module currently has no public API. See:
+
+- `daschlab.Session.cutout()`
+- `daschlab.plates.Plates.show()`
 """
 
 from urllib.parse import urlencode
