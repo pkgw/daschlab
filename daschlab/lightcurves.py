@@ -2,7 +2,10 @@
 # Licensed under the MIT License
 
 """
-Lightcurves
+DASCH lightcurve data.
+
+The main class provided by this module is `Lightcurve`, instances of which can
+be obtained with the `daschlab.Session.lightcurve()` method.
 """
 
 from enum import IntFlag
@@ -106,28 +109,83 @@ _COLTYPES = {
 
 
 class AFlags(IntFlag):
+    """
+    DASCH photometry data quality warning flags.
+
+    The "AFLAGS" value is an integer where each bit indicates a data quality
+    concern. The highest-quality data have no bits set, i.e., an integer value
+    of zero.
+
+    **Flag documentation is intentionally superficial.** Flag semantics are
+    (**FIXME: will be**) documented more thoroughly in the DASCH data
+    description pages.
+    """
+
     HIGH_BACKGROUND = 1 << 6  # NB, this is "bit 7" since we count them 1-based
+    "Bit 7: High SExtractor background level at object position"
+
     BAD_PLATE_QUALITY = 1 << 7
+    "Bit 8: Plate fails general quality checks"
+
     MULT_EXP_UNMATCHED = 1 << 8
+    "Bit 9: Object is unmatched and this is a multiple-exposure plate"
+
     UNCERTAIN_DATE = 1 << 9
+    "Bit 10: Observation time is too uncertain to calculate extinction accurately"
+
     MULT_EXP_BLEND = 1 << 10
+    "Bit 11: Object is a blend and this is a multiple-exposure plate"
+
     LARGE_ISO_RMS = 1 << 11
+    "Bit 12: SExtractor isophotonic RMS is suspiciously large"
+
     LARGE_LOCAL_SMOOTH_RMS = 1 << 12
+    "Bit 13: Local-binning RMS is suspiciously large"
+
     CLOSE_TO_LIMITING = 1 << 13
+    "Bit 14: Object brightness is too close to the local limiting magnitude"
+
     RADIAL_BIN_9 = 1 << 14
+    "Bit 15: Object is in radial bin 9 (close to the plate edge)"
+
     BIN_DRAD_UNKNOWN = 1 << 15
+    "Bit 16: Object's spatial bin has unmeasured ``drad``"
+
     UNCERTAIN_CATALOG_MAG = 1 << 19
+    "Bit 20: Magnitude of the catalog source is uncertain/variable"
+
     CASE_B_BLEND = 1 << 20
+    'Bit 21: "Case B" blend - multiple catalog entries for one imaged star'
+
     CASE_C_BLEND = 1 << 21
+    'Bit 22: "Case C" blend - mutiple imaged stars for one catalog entry'
+
     CASE_BC_BLEND = 1 << 22
+    'Bit 23: "Case B/C" blend  - multiple catalog entries and imaged stars all mixed up'
+
     LARGE_DRAD = 1 << 23
+    "Bit 24: Object ``drad`` is large relative to its bin, or its spatial or local bin is bad"
+
     PICKERING_WEDGE = 1 << 24
+    "Bit 25: Object is a Pickering Wedge image"
+
     SUSPECTED_DEFECT = 1 << 25
+    "Bit 26: Object is a suspected plate defect"
+
     SXT_BLEND = 1 << 26
+    "Bit 27: SExtractor flags the object as a blend"
+
     REJECTED_BLEND = 1 << 27
+    "Bit 28: Rejected blended object"
+
     LARGE_SMOOTHING_CORRECTION = 1 << 28
+    "Bit 29: Smoothing correction is suspiciously large"
+
     TOO_BRIGHT = 1 << 29
+    "Bit 30: Object is too bright for accurate calibration"
+
     LOW_ALTITUDE = 1 << 30
+    "Bit 31: Low altitude - object is within 23.5 deg of the horizon"
 
 
 _AFLAG_DESCRIPTIONS = [
@@ -166,31 +224,92 @@ _AFLAG_DESCRIPTIONS = [
 
 
 class BFlags(IntFlag):
+    """
+    DASCH photometry data processing flags.
+
+    The "BFLAGS" value is an integer where each bit indicates something about
+    the data processing of this photometric point. Unlike the "AFLAGS", these
+    are not necessarily "good" or "bad".
+
+    **Flag documentation is intentionally superficial.** Flag semantics are
+    (**FIXME: will be**) documented more thoroughly in the DASCH data
+    description pages.
+    """
+
     NEIGHBORS = 1 << 0
+    "Bit 1: Object has nearby neighbors"
+
     BLEND = 1 << 1
+    "Bit 2: Object was blended with another"
+
     SATURATED = 1 << 2
+    "Bit 3: At least one image pixel was saturated"
+
     NEAR_BOUNDARY = 1 << 3
+    "Bit 4: Object is too close to the image boundary"
+
     APERTURE_INCOMPLETE = 1 << 4
+    "Bit 5: Object aperture data incomplete or corrupt"
+
     ISOPHOT_INCOMPLETE = 1 << 5
+    "Bit 6: Object isophotal data incomplete or corrupt"
+
     DEBLEND_OVERFLOW = 1 << 6
+    "Bit 7: Memory overflow during deblending"
+
     EXTRACTION_OVERFLOW = 1 << 7
+    "Bit 8: Memory overflow during extraction"
+
     CORRECTED_FOR_BLEND = 1 << 8
+    "Bit 9: Magnitude corrected for blend"
+
     LARGE_BIN_DRAD = 1 << 9
+    "Bit 10: Object ``drad`` is low, but its bin ``drad`` is large"
+
     PSF_SATURATED = 1 << 10
+    "Bit 11: Object PSF considered saturated"
+
     MAG_DEP_CAL_APPLIED = 1 << 11
+    "Bit 12: Magnitude-dependent calibration has been applied (this is good)"
+
     GOOD_STAR = 1 << 16
+    "Bit 17: Appears to be a good star (this is good)"
+
     LOWESS_CAL_APPLIED = 1 << 17
+    "Bit 18: Lowess calibration has been applied (this is good)"
+
     LOCAL_CAL_APPLIED = 1 << 18
+    "Bit 19: Local calibration has been applied (this is good)"
+
     EXTINCTION_CAL_APPLIED = 1 << 19
+    "Bit 20: Extinction calibration has been applied (this is good)"
+
     TOO_BRIGHT = 1 << 20
+    "Bit 21: Object is too bright to calibrate"
+
     COLOR_CORRECTION_APPLIED = 1 << 21
+    "Bit 22: Color correction has been applied (this is good)"
+
     COLOR_CORRECTION_USED_METROPOLIS = 1 << 22
+    "Bit 23: Color correction used the Metropolis algorithm (this is good)"
+
     LATE_CATALOG_MATCH = 1 << 24
+    "Bit 25: Object was only matched to catalog at the end of the pipeline"
+
     LARGE_PROMO_UNCERT = 1 << 25
+    "Bit 26: Object has high proper motion uncertainty"
+
     LARGE_SPATIAL_BIN_COLORTERM = 1 << 27
+    "Bit 28: Spatial bin color-term calibration fails quality check"
+
     POSITION_ADJUSTED = 1 << 28
+    "Bit 29: RA/Dec have been adjusted by bin medians"
+
     LARGE_JD_UNCERT = 1 << 29
+    "Bit 30: Plate date is uncertain"
+
     PROMO_APPLIED = 1 << 30
+    "Bit 31: Catalog position has been corrected for proper motion (this is good)"
 
 
 _BFLAG_DESCRIPTIONS = [
@@ -229,9 +348,27 @@ _BFLAG_DESCRIPTIONS = [
 
 
 class LocalBinRejectFlags(IntFlag):
+    """
+    DASCH photometry data processing warning flags regarding the "local bin"
+    calibration.
+
+    The ``local_bin_reject_flag`` value is an integer where each bit indicates
+    something about the local-bin calibration of this photometric point. The
+    highest-quality data have no bits set, i.e., an integer value of zero.
+
+    **Flag documentation is intentionally superficial.** Flag semantics are
+    (**FIXME: will be**) documented more thoroughly in the DASCH data
+    description pages.
+    """
+
     LARGE_CORRECTION = 1 << 0
+    "Bit 1: Local correction is out of range"
+
     TOO_DIM = 1 << 1
+    "Bit 2: Median brightness is below the limiting magnitude"
+
     LARGE_DRAD = 1 << 2
+    "Bit 3: Majority of stars have a high ``drad``"
 
 
 _LOCAL_BIN_REJECT_FLAG_DESCRIPTIONS = [
@@ -242,19 +379,57 @@ _LOCAL_BIN_REJECT_FLAG_DESCRIPTIONS = [
 
 
 class PlateQualityFlags(IntFlag):
+    """
+    DASCH photometry data processing warning flags based on plate-level
+    diagnostics.
+
+    The ``plate_quality_flag`` value is an integer where each bit indicates
+    something about the quality of the plate associated with this photometric
+    point. In most but not all cases, the "good" flag setting is zero.
+
+    **Flag documentation is intentionally superficial.** Flag semantics are
+    (**FIXME: will be**) documented more thoroughly in the DASCH data
+    description pages.
+    """
+
     MULTIPLE_EXPOSURE = 1 << 0
+    "Bit 1: Multiple-exposure plate"
+
     GRATING = 1 << 1
+    "Bit 2: Grating plate"
+
     COLORED_FILTER = 1 << 2
+    "Bit 3: Color-filter plate"
+
     COLORTERM_OUT_OF_BOUNDS = 1 << 3
+    "Bit 4: Image fails colorterm limits"
+
     PICKERING_WEDGE = 1 << 4
+    "Bit 5: Pickering Wedge plate"
+
     SPECTRUM = 1 << 5
+    "Bit 6: Spectrum plate"
+
     SATURATED = 1 << 6
+    "Bit 7: Saturated images"
+
     MAG_DEP_CAL_UNAVAILABLE = 1 << 7
+    "Bit 8: Magnitude-dependent calibration unavailable"
+
     PATROL_TELESCOPE = 1 << 8
+    "Bit 9: Patrol-telescope plate"
+
     NARROW_TELESCOPE = 1 << 9
+    "Bit 10: Narrow-field-telescope plate (this is good!)"
+
     SHOW_LIMITING = 1 << 10
+    "Bit 11: (internal only? plotter shows limiting magnitudes)"
+
     SHOW_UNDETECTED = 1 << 11
+    "Bit 12: (internal only? plotter shows nondetections)"
+
     TRAILED = 1 << 12
+    "Bit 13: Image is trailed -- ellipticity > 0.6"
 
 
 _PLATE_QUALITY_FLAG_DESCRIPTIONS = [
@@ -293,7 +468,25 @@ def _report_flags(desc, observed, enumtype, descriptions):
 
 
 class LightcurvePoint(Row):
+    """
+    A single row from a `Lightcurve` table.
+
+    You do not need to construct these objects manually. Indexing a `Lightcurve`
+    in a way that yields a single row will yield an instance of this class,
+    which is a subclass of `astropy.table.Row`.
+    """
+
     def flags(self):
+        """
+        Print out a textual summary of the quality flags associated with this
+        row.
+
+        Notes
+        =====
+        The output from this method summarizes the contents of this row's
+        `AFlags`, `BFlags`, `LocalBinRejectFlags`, and `PlateQualityFlags`.
+        """
+
         _report_flags("AFLAGS", self["aflags"], AFlags, _AFLAG_DESCRIPTIONS)
         _report_flags("BFLAGS", self["bflags"], BFlags, _BFLAG_DESCRIPTIONS)
         _report_flags(
@@ -312,7 +505,12 @@ class LightcurvePoint(Row):
 
 class LightcurveSelector:
     """
-    A magic object to help enable lightcurve filtering.
+    A helper object that supports `Lightcurve` filtering functionality.
+
+    Lightcurve selector objects are returned by lightcurve selection "action
+    verbs" such as `Lightcurve.keep_only`. Calling one of the methods on a
+    selector instance will apply the associated action to the specified portion
+    of the lightcurve data.
     """
 
     _lc: "Lightcurve"
@@ -322,22 +520,136 @@ class LightcurveSelector:
         self._lc = lc
         self._apply = apply
 
-    def where(self, row_mask, **kwargs) -> "Lightcurve":
+    def where(self, row_mask: np.ndarray, **kwargs) -> "Lightcurve":
+        """
+        Act on exactly the specified list of rows.
+
+        Parameters
+        ==========
+        row_mask : boolean `numpy.ndarray`
+          A boolean array of exactly the size of the input lightcurve, with true
+          values indicating rows that should be acted upon.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only points that are from A-series
+        plates with detections brighter than 13th magnitude::
+
+          lc = sess.lightcurve(some_local_id)
+          subset = lc.keep_only.where(
+              lc.match.series("a") & lc.match.brighter(13)
+          )
+        """
         return self._apply(self, row_mask, **kwargs)
 
     def detected(self, **kwargs) -> "Lightcurve":
+        """
+        Act on rows corresponding to detections.
+
+        Parameters
+        ==========
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only detections::
+
+          detns = sess.lightcurve(some_local_id).keep_only.detected()
+        """
         m = ~self._lc["magcal_magdep"].mask
         return self._apply(self, m, **kwargs)
 
     def undetected(self, **kwargs) -> "Lightcurve":
+        """
+        Act on rows corresponding to nondetections.
+
+        Parameters
+        ==========
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only nondetections::
+
+          nondetns = sess.lightcurve(some_local_id).keep_only.undetected()
+        """
         m = self._lc["magcal_magdep"].mask
         return self._apply(self, m, **kwargs)
 
     def rejected(self, **kwargs) -> "Lightcurve":
+        """
+        Act on rows with a non-zero ``"reject"`` value.
+
+        Parameters
+        ==========
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only rejected rows::
+
+          rejects = sess.lightcurve(some_local_id).keep_only.rejected()
+        """
         m = self._lc["reject"] != 0
         return self._apply(self, m, **kwargs)
 
     def rejected_with(self, tag: str, strict: bool = False, **kwargs) -> "Lightcurve":
+        """
+        Act on rows that have been rejected with the specified tag.
+
+        Parameters
+        ==========
+        tag : `str`
+          The tag used to identify the rejection reason
+        strict : optional `bool`, default `False`
+          If true, and the specified tag has not been defined, raise an exception.
+          Otherwise, the action will be invoked with no rows selected.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only rows rejected with the "astrom"
+        tag:
+
+          lc = sess.lightcurve(some_local_id)
+          astrom_rejects = lc.keep_only.rejected_with("astrom")
+        """
         bitnum0 = None
 
         if self._lc._rejection_tags is not None:
@@ -353,46 +665,301 @@ class LightcurveSelector:
         return self._apply(self, m, **kwargs)
 
     def nonrej_detected(self, **kwargs) -> "Lightcurve":
+        """
+        Act on rows that are non-rejected detections.
+
+        Parameters
+        ==========
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only non-rejected detections::
+
+          good = sess.lightcurve(some_local_id).keep_only.nonrej_detected()
+
+        Notes
+        =====
+        This selector is a shorthand combination of
+        `LightcurveSelector.detected()` and (a logical inversion of)
+        `LightcurveSelector.rejected()`.
+        """
         m = ~self._lc["magcal_magdep"].mask & (self._lc["reject"] == 0)
         return self._apply(self, m, **kwargs)
 
     def sep_below(
         self, sep_limit: u.Quantity = 20 * u.arcsec, **kwargs
     ) -> "Lightcurve":
+        """
+        Act on rows whose positional separations from the mean source location
+        are below the limit.
+
+        Parameters
+        ==========
+        sep_limit : optional `astropy.units.Quantity`, default 20 arcsec
+          The separation limit. This should be an angular quantity.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only detections within 10 arcsec
+        of the mean source position::
+
+          from astropy import units as u
+
+          near = sess.lightcurve(some_local_id).keep_only.sep_below(10 * u.arcsec)
+
+        Notes
+        =====
+        The separation is computed against the value returned by
+        `Lightcurve.mean_pos()`. Nondetection rows do not have an associated
+        position, and will never match this filter.
+        """
         mp = self._lc.mean_pos()
         seps = mp.separation(self._lc["pos"])
         m = seps < sep_limit
         return self._apply(self, m, **kwargs)
 
     def any_aflags(self, aflags: int, **kwargs) -> "Lightcurve":
+        """
+        Act on rows that have any of the specific AFLAGS bits set.
+
+        Parameters
+        ==========
+        aflags : `int` or `AFlags`
+          The flag or flags to check for. If this value contains multiple
+          non-zero bits, a row will be selected if its AFLAGS contain
+          *any* of the specified bits.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only rows with the specified flags::
+
+          from astropy import units as u
+          from daschlab.lightcurves import AFlags
+
+          filter = AFlags.LARGE_DRAD | AFlags.RADIAL_BIN_9
+          bad = sess.lightcurve(some_local_id).keep_only.any_aflags(filter)
+        """
         m = (self._lc["aflags"] & aflags) != 0
         return self._apply(self, m, **kwargs)
 
     def local_id(self, local_id: int, **kwargs) -> "Lightcurve":
+        """
+        Act on the row with the specified local ID.
+
+        Parameters
+        ==========
+        local_id : `int`
+          The local ID to select.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only the chronologically first
+        row::
+
+          first = sess.lightcurve(some_local_id).keep_only.local_id(0)
+
+        Notes
+        =====
+        Lightcurve point local IDs are unique, and so this filter should only
+        ever match at most one row.
+        """
         m = self._lc["local_id"] == local_id
         return self._apply(self, m, **kwargs)
 
     def series(self, series: str, **kwargs) -> "Lightcurve":
-        m = self._lc["series"] == series
+        """
+        Act on rows associated with the specified plate series.
+
+        Parameters
+        ==========
+        series : `str`
+          The plate series to select.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only points from the MC series::
+
+          mcs = sess.lightcurve(some_local_id).keep_only.series("mc")
+        """
+        m = self._lc["series"] == series.lower()
         return self._apply(self, m, **kwargs)
 
     def brighter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
+        """
+        Act on detections brighter than the specified cutoff magnitude.
+
+        Parameters
+        ==========
+        cutoff_mag : `float`
+          The cutoff magnitude.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only points brighter than 13th
+        magnitude::
+
+          bright = sess.lightcurve(some_local_id).keep_only.brighter(13)
+
+        Notes
+        =====
+        The cutoff is exclusive, i.e., the comparison is perform with a
+        less-than rather than less-than-or-equals comparison.
+        """
         m = self._lc["magcal_magdep"] < cutoff_mag
         return self._apply(self, m, **kwargs)
 
     def detected_and_fainter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
+        """
+        Act on detections fainter than the specified cutoff magnitude.
+
+        Parameters
+        ==========
+        cutoff_mag : `float`
+          The cutoff magnitude.
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only points fainter than 13th
+        magnitude::
+
+          faint = sess.lightcurve(some_local_id).keep_only.detected_and_fainter(13)
+
+        Notes
+        =====
+        The cutoff is exclusive, i.e., the comparison is perform with a
+        greater-than rather than greater-than-or-equals comparison.
+        """
         m = self._lc["magcal_magdep"] > cutoff_mag
         return self._apply(self, m, **kwargs)
 
     def narrow(self, **kwargs) -> "Lightcurve":
+        """
+        Act on rows associated with narrow-field telescopes.
+
+        Parameters
+        ==========
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only points from narrow-field
+        telescopes::
+
+          narrow = sess.lightcurve(some_local_id).keep_only.narrow()
+        """
         m = [SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]]
         return self._apply(self, m, **kwargs)
 
     def patrol(self, **kwargs) -> "Lightcurve":
+        """
+        Act on rows associated with low-resolution "patrol" telescopes.
+
+        Parameters
+        ==========
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only points from patrol
+        telescopes::
+
+          patrol = sess.lightcurve(some_local_id).keep_only.patrol()
+        """
         m = [SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]]
         return self._apply(self, m, **kwargs)
 
     def meteor(self, **kwargs) -> "Lightcurve":
+        """
+        Act on rows associated with ultra-low-resolution "meteor" telescopes.
+
+        Parameters
+        ==========
+        **kwargs
+          Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+          However, different actions may return different types. For instance,
+          the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only points from meteor
+        telescopes::
+
+          meteor = sess.lightcurve(some_local_id).keep_only.meteor()
+        """
         m = [SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]]
         return self._apply(self, m, **kwargs)
 
