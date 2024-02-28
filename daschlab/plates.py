@@ -106,9 +106,9 @@ class PlateRow(Row):
         Returns
         =======
         `pywwt.layers.ImageLayer`
-          This is the WWT image layer object corresponding to the displayed FITS
-          file. You can use it to programmatically control aspects of how the
-          file is displayed, such as the colormap.
+            This is the WWT image layer object corresponding to the displayed
+            FITS file. You can use it to programmatically control aspects of how
+            the file is displayed, such as the colormap.
 
         Notes
         =====
@@ -125,9 +125,9 @@ class PlateRow(Row):
         Returns
         =======
         `str`
-          The returned string has the form ``{series}{platenum}_{mosnum}``, where
-          the plate number is zero-padded to be five digits wide, and the mosaic
-          number is zero-padded to be two digits wide.
+            The returned string has the form ``{series}{platenum}_{mosnum}``,
+            where the plate number is zero-padded to be five digits wide, and
+            the mosaic number is zero-padded to be two digits wide.
         """
         return f"{self['series']}{self['platenum']:05d}_{self['mosnum']:02d}"
 

@@ -3,6 +3,9 @@
 
 """
 Data extracted from one of the DASCH reference catalogs in the query region.
+
+The main class provided by this module is `RefcatSources`, instances of which
+can be obtained with the `daschlab.Session.refcat()` method.
 """
 
 from copy import copy
@@ -45,7 +48,27 @@ _COLTYPES = {
 
 
 class RefcatSourceRow(Row):
+    """
+    A single row from a `RefcatSources` table.
+
+    You do not need to construct these objects manually. Indexing a `RefcatSources`
+    table with a single integer will yield an instance of this class, which is a
+    subclass of `astropy.table.Row`.
+    """
+
     def lightcurve(self) -> "daschlab.lightcurves.Lightcurve":
+        """
+        Obtain a table of lightcurve data for this specified source.
+
+        Returns
+        =======
+        A `daschlab.lightcurves.Lightcurve` instance.
+
+        Notes
+        =====
+        For details, see `daschlab.Session.lightcurve()`, which implements this
+        functionality.
+        """
         return self._table._sess.lightcurve(self)
 
 
@@ -53,11 +76,43 @@ SourceReferenceType = Union[RefcatSourceRow, int, Literal["click"]]
 
 
 class RefcatSources(Table):
+    """
+    A table of sources from a DASCH reference catalog.
+
+    A `RefcatSources` is a subclass of `astropy.table.Table` containing DASCH
+    catalog data and associated catalog-specific methods. You can use all of the
+    usual methods and properties made available by the `astropy.table.Table`
+    class. Items provided by the `~astropy.table.Table` class are not documented
+    here.
+
+    You should not construct `RefcatSources` instances directly. Instead, obtain
+    the full table using the `daschlab.Session.refcat()` method.
+
+    **Columns are not documented here!** They are (**FIXME: will be**)
+    documented more thoroughly in the DASCH data description pages.
+    """
+
     _sess: "daschlab.Session" = None
     _layer: Optional[TableLayer] = None
     Row = RefcatSourceRow
 
     def show(self) -> TableLayer:
+        """
+        Display the catalog contents in the WWT view.
+
+        Returns
+        =======
+        `pywwt.layers.TableLayer`
+            This is the WWT table layer object corresponding to the displayed
+            catalog. You can use it to programmatically control aspects of how
+            the data are displayed, such as the which column sets the point
+            size.
+
+        Notes
+        =====
+        In order to use this method, you must first have called
+        `daschlab.Session.connect_to_wwt()`.
+        """
         if self._layer is not None:
             return self._layer
 
