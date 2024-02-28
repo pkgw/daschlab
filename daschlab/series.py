@@ -2,7 +2,11 @@
 # Licensed under the MIT License
 
 """
-Information about the various plate series.
+Information about the various plate series encountered in DASCH.
+
+You will probably not need to use this module directly. It provides data that
+are used to fill in other tables such as those provided by
+`daschlab.plates.Plates.series_info()`.
 """
 
 from dataclasses import dataclass
@@ -15,18 +19,40 @@ __all__ = ["SeriesInfo", "SeriesKind"]
 
 
 class SeriesKind(Enum):
+    """
+    A classification of different series by plate scale (spatial resolution).
+    """
+
     NARROW = 0
+    """\"Narrow\" series have plate scales of 400 arcsec/mm or lower."""
+
     PATROL = 1
+    """\"Patrol\" series have plate scales between 400 arcsec/mm and 900 arcsec/mm."""
+
     METEOR = 2
+    """\"Meteor\" series have plate scales of 900 arcsec/mm or larger."""
 
 
 @dataclass
 class SeriesInfo:
+    """
+    General information about a plate series.
+    """
+
     series: str
+    "The series identifier"
+
     description: str
+    "A textual description of the series."
+
     kind: SeriesKind
+    'The series "kind", in terms of plate scale / spatial resolution.'
+
     plate_scale: float
+    "The characteristic plate scale of plates in this series, in arcsec/mm."
+
     aperture: float
+    "The characteristic telescope aperture used in plates in this series, in meters."
 
 
 SERIES: Dict[str, SeriesInfo] = {}

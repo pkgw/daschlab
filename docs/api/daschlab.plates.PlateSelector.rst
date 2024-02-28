@@ -6,6 +6,12 @@ PlateSelector
 .. autoclass:: PlateSelector
    :show-inheritance:
 
+   .. rubric:: Attributes Summary
+
+   .. autosummary::
+
+      ~PlateSelector.not_
+
    .. rubric:: Methods Summary
 
    .. autosummary::
@@ -22,6 +28,10 @@ PlateSelector
       ~PlateSelector.series
       ~PlateSelector.wcs_solved
       ~PlateSelector.where
+
+   .. rubric:: Attributes Documentation
+
+   .. autoattribute:: not_
 
    .. rubric:: Methods Documentation
 

@@ -534,8 +534,8 @@ class LightcurvePoint(Row):
     A single row from a `Lightcurve` table.
 
     You do not need to construct these objects manually. Indexing a `Lightcurve`
-    in a way that yields a single row will yield an instance of this class,
-    which is a subclass of `astropy.table.Row`.
+    table with a single integer will yield an instance of this class, which is a
+    subclass of `astropy.table.Row`.
     """
 
     def flags(self):

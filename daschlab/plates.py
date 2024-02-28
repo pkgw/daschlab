@@ -2,7 +2,16 @@
 # Licensed under the MIT License
 
 """
-Lists of plates.
+Tables of information about photographic plates.
+
+The main class provided by this module is `Plates`, instances of which can be
+obtained with the `daschlab.Session.plates()` method.
+
+The nomenclature in this module somewhat glosses over the distinction between
+physical plates and “mosaics”, which is the DASCH terminology for a single large
+image made from a scan of a plate. Multiple mosaics of a single plate can, in
+principle, exist. To a good approximation, however, there is a 1:1 relationship
+between the two.
 """
 
 from datetime import datetime
@@ -82,10 +91,44 @@ _COLTYPES = {
 
 
 class PlateRow(Row):
+    """
+    A single row from a `Plates` table.
+
+    You do not need to construct these objects manually. Indexing a `Plates`
+    table with a single integer will yield an instance of this class, which is a
+    subclass of `astropy.table.Row`.
+    """
+
     def show(self) -> ImageLayer:
+        """
+        Display the cutout of this plate in the WWT view.
+
+        Returns
+        =======
+        `pywwt.layers.ImageLayer`
+            This is the WWT image layer object corresponding to the displayed
+            FITS file. You can use it to programmatically control aspects of how
+            the file is displayed, such as the colormap.
+
+        Notes
+        =====
+        In order to use this method, you must first have called
+        `daschlab.Session.connect_to_wwt()`. If needed, this method will execute
+        an API call and download the cutout to be displayed, which may be slow.
+        """
         return self._table.show(self)
 
     def plate_id(self) -> str:
+        """
+        Get a textual identifier for this plate.
+
+        Returns
+        =======
+        `str`
+            The returned string has the form ``{series}{platenum}_{mosnum}``,
+            where the plate number is zero-padded to be five digits wide, and
+            the mosaic number is zero-padded to be two digits wide.
+        """
         return f"{self['series']}{self['platenum']:05d}_{self['mosnum']:02d}"
 
 
@@ -94,7 +137,15 @@ PlateReferenceType = Union[PlateRow, int]
 
 class PlateSelector:
     """
-    A magic object to help enable plate-list filtering.
+    A helper object that supports `Plates` filtering functionality.
+
+    Plate selector objects are returned by plate selection "action verbs" such
+    as `Plates.keep_only`. Calling one of the methods on a selector instance
+    will apply the associated action to the specified portion of the lightcurve
+    data.
+
+    See the introduction to the `daschlab.lightcurves` module for an overview of
+    the filtering framework used here.
     """
 
     _plates: "Plates"
@@ -104,14 +155,116 @@ class PlateSelector:
         self._plates = plates
         self._apply = apply
 
+    def _apply_not(self, flags, **kwargs):
+        "This isn't a lambda because it needs to accept and relay **kwargs"
+        return self._apply(~flags, **kwargs)
+
+    @property
+    def not_(self) -> "PlateSelector":
+        """
+        Get a selector that will act on an inverted row selection.
+
+        Examples
+        ========
+        Create a plate-list subset only those plates without good WCS
+        solutions::
+
+            from astropy import units as u
+
+            pl = sess.plates()
+            unsolved = plates.keep_only.not_.wcs_solved()
+
+        In general, the function of this modifier is such that::
+
+            pl.ACTION.not_.CONDITION() # should be equivalent to:
+            pl.ACTION.where(~pl.match.CONDITION())
+        """
+        return PlateSelector(self._plates, self._apply_not)
+
     def where(self, row_mask, **kwargs) -> "Plates":
-        return self._apply(self, row_mask, **kwargs)
+        """
+        Act on exactly the specified list of rows.
+
+        Parameters
+        ==========
+        row_mask : boolean `numpy.ndarray`
+            A boolean array of exactly the size of the input plate list, with true
+            values indicating rows that should be acted upon.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only points that are from A-series
+        plates without good WCS solutions::
+
+            pl = sess.plates()
+            subset = pl.keep_only.where(
+                pl.match.series("a") & pl.match.not_.wcs_solved()
+            )
+        """
+        return self._apply(row_mask, **kwargs)
 
     def rejected(self, **kwargs) -> "Plates":
+        """
+        Act on rows with a non-zero ``"reject"`` value.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only rejected rows::
+
+            pl = sess.plates()
+            rejects = pl.keep_only.rejected()
+        """
         m = self._plates["reject"] != 0
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def rejected_with(self, tag: str, strict: bool = False, **kwargs) -> "Plates":
+        """
+        Act on rows that have been rejected with the specified tag.
+
+        Parameters
+        ==========
+        tag : `str`
+            The tag used to identify the rejection reason
+        strict : optional `bool`, default `False`
+            If true, and the specified tag has not been defined, raise an
+            exception. Otherwise, the action will be invoked with no rows
+            selected.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only rows rejected with the
+        "astrom" tag:
+
+            pl = sess.plates()
+            astrom_rejects = pl.keep_only.rejected_with("astrom")
+        """
         bitnum0 = None
 
         if self._plates._rejection_tags is not None:
@@ -124,37 +277,235 @@ class PlateSelector:
         else:
             m = np.zeros(len(self._plates), dtype=bool)
 
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def local_id(self, local_id: int, **kwargs) -> "Plates":
+        """
+        Act on the row with the specified local ID.
+
+        Parameters
+        ==========
+        local_id : `int`
+            The local ID to select.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only the chronologically first
+        row::
+
+            pl = sess.plates()
+            first = pl.keep_only.local_id(0)
+
+        Notes
+        =====
+        Plate local IDs are unique, and so this filter should only
+        ever match at most one row.
+        """
         m = self._plates["local_id"] == local_id
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def scanned(self, **kwargs) -> "Plates":
+        """
+        Act on rows corresponding to plates that have been scanned.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only *unscanned* plates::
+
+            pl = sess.plates()
+            unscanned = pl.drop.scanned()
+            # or equivalently:
+            unscanned = pl.keep_only.not_.scanned()
+
+        Notes
+        =====
+        Some plates have been scanned, but do not have astrometric (WCS) solutions.
+        These are not processed by the DASCH photometric pipeline since catalog
+        cross-matching is not possible. Use `wcs_solved()` to act on such plates.
+        """
         m = ~self._plates["scannum"].mask
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def wcs_solved(self, **kwargs) -> "Plates":
+        """
+        Act on rows corresponding to plates that have astrometric (WCS) solutions.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only WCS-solved plates::
+
+            pl = sess.plates()
+            solved = pl.keep_only.wcs_solved()
+
+        Notes
+        =====
+        All WCS-solved plates are by definition scanned. Unfortunately, some
+        of the WCS solutions are erroneous.
+        """
         m = self._plates["wcssource"] == "imwcs"
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def series(self, series: str, **kwargs) -> "Plates":
+        """
+        Act on rows associated with the specified plate series.
+
+        Parameters
+        ==========
+        series : `str`
+            The plate series to select.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only points from the MC series::
+
+            pl = sess.plates()
+            mcs = pl.keep_only.series("mc")
+        """
         m = self._plates["series"] == series
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def narrow(self, **kwargs) -> "Plates":
+        """
+        Act on rows associated with narrow-field telescopes.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only points from narrow-field
+        telescopes::
+
+            pl = sess.plates()
+            narrow = pl.keep_only.narrow()
+        """
         m = [SERIES[k].kind == SeriesKind.NARROW for k in self._plates["series"]]
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def patrol(self, **kwargs) -> "Plates":
+        """
+        Act on rows associated with low-resolution "patrol" telescopes.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only points from patrol
+        telescopes::
+
+            pl = sess.plates()
+            patrol = pl.keep_only.patrol()
+        """
         m = [SERIES[k].kind == SeriesKind.PATROL for k in self._plates["series"]]
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def meteor(self, **kwargs) -> "Plates":
+        """
+        Act on rows associated with ultra-low-resolution "meteor" telescopes.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing only points from meteor
+        telescopes::
+
+            pl = sess.plates()
+            meteor = pl.keep_only.meteor()
+        """
         m = [SERIES[k].kind == SeriesKind.METEOR for k in self._plates["series"]]
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def plate_names(self, names: Iterable[str], **kwargs) -> "Plates":
+        """
+        Act on rows associated with the specified plate names.
+
+        Parameters
+        ==========
+        names : iterable of `str`
+            Each name should be of the form ``{series}{platenum}``. Capitalization
+            and zero-padding of the plate number are not important. This is different
+            than a plate-ID, which also includes the mosaic number.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing the specified plates:
+
+            pl = sess.plates()
+            subset = pl.keep_only.plate_names(["A10000", "mc1235"])
+        """
         # This feels so inefficient, but it's not obvious to me how to do any better
         m = np.zeros(len(self._plates), dtype=bool)
 
@@ -165,16 +516,65 @@ class PlateSelector:
             )
             m |= this_one
 
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
     def jyear_range(self, jyear_min: float, jyear_max: float, **kwargs) -> "Plates":
+        """
+        Act on plates observed within the specified Julian-year time range.
+
+        Parameters
+        ==========
+        jyear_min : `float`
+            The lower limit of the time range (inclusive).
+        jyear_max : `float`
+            The upper limit of the time range (inclusive).
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Plates`
+            However, different actions may return different types. For instance,
+            the `Plates.count` action will return an integer.
+
+        Examples
+        ========
+        Create a plate-list subset containing plates observed in the 1920's::
+
+            pl = sess.plates()
+            subset = pl.keep_only.jyear_range(1920, 1930)
+
+        Notes
+        =====
+        The comparison is performed against the ``jyear`` attribute of the
+        contents of the ``"obs_date"`` column.
+        """
         m = (self._plates["obs_date"].jyear >= jyear_min) & (
             self._plates["obs_date"].jyear <= jyear_max
         )
-        return self._apply(self, m, **kwargs)
+        return self._apply(m, **kwargs)
 
 
 class Plates(Table):
+    """
+    A table of DASCH plate information.
+
+    A `Plates` is a subclass of `astropy.table.Table` containing DASCH plate
+    data and associated plate-specific methods. You can use all of the usual
+    methods and properties made available by the `astropy.table.Table` class.
+    Items provided by the `~astropy.table.Table` class are not documented here.
+
+    You should not construct `Plates` instances directly. Instead, obtain the
+    full table using the `daschlab.Session.plates()` method.
+
+    **Columns are not documented here!** They are (**FIXME: will be**)
+    documented more thoroughly in the DASCH data description pages.
+
+    See :ref:`the module-level documentation <lc-filtering>` of the
+    `daschlab.lightcurves` for a summary of the filtering and subsetting
+    functionality provided by this class.
+    """
+
     _sess: "daschlab.Session" = None
     _rejection_tags: Optional[Dict[str, int]] = None
     _layers: Dict[int, ImageLayer] = None
@@ -196,29 +596,55 @@ class Plates(Table):
 
     @property
     def match(self) -> PlateSelector:
-        return PlateSelector(self, lambda _sel, m: m)
+        """
+        An :ref:`action <lc-filtering>` returning a boolean array identifying selected rows.
+
+        Unlike many actions, this does not return a new `Plates`. It can be used
+        to implement arbitrary boolean logic within the action/selection framework::
+
+            pl = sess.plates()
+            subset = pl.keep_only.where(
+                pl.match.series("a") & pl.match.wcs_solved()
+            )
+        """
+        return PlateSelector(self, lambda m: m)
 
     @property
     def count(self) -> PlateSelector:
-        return PlateSelector(self, lambda _sel, m: m.sum())
+        """
+        An :ref:`action <lc-filtering>` returning the number of selected rows
 
-    def _apply_keep_only(self, _selector, flags, verbose=True) -> "Plates":
+        Unlike many actions, this returns an `int`, not a new `Plates`.
+        """
+        return PlateSelector(self, lambda m: m.sum())
+
+    def _apply_keep_only(self, flags, verbose=True) -> "Plates":
         return self._copy_subset(flags, verbose)
 
     @property
     def keep_only(self) -> PlateSelector:
+        """
+        An :ref:`action <lc-filtering>` returning a `Plates` copy containing only the selected rows.
+        """
         return PlateSelector(self, self._apply_keep_only)
 
-    def _apply_drop(self, _selector, flags, verbose=True) -> "Plates":
+    def _apply_drop(self, flags, verbose=True) -> "Plates":
         return self._copy_subset(~flags, verbose)
 
     @property
     def drop(self) -> PlateSelector:
+        """
+        An :ref:`action <lc-filtering>` returning a `Plates` copy dropping
+        the selected rows; all non-selected rows are retained.
+        """
         return PlateSelector(self, self._apply_drop)
 
-    def _make_reject_selector(
-        self, tag: str, verbose: bool, apply_func
-    ) -> PlateSelector:
+    def _process_reject_tag(self, tag: str, verbose: bool) -> int:
+        if not tag:
+            raise Exception(
+                'you must specify a rejection tag with a `tag="text"` keyword argument'
+            )
+
         if self._rejection_tags is None:
             self._rejection_tags = {}
 
@@ -234,13 +660,12 @@ class Plates(Table):
 
             self._rejection_tags[tag] = bitnum0
 
-        selector = PlateSelector(self, apply_func)
-        selector._bitnum0 = bitnum0
-        return selector
+        return bitnum0
 
-    def _apply_reject(self, selector, flags, verbose: bool = True):
+    def _apply_reject(self, flags, tag: str = None, verbose: bool = True):
+        bitnum0 = self._process_reject_tag(tag, verbose)
         n_before = (self["reject"] != 0).sum()
-        self["reject"][flags] |= 1 << selector._bitnum0
+        self["reject"][flags] |= 1 << bitnum0
         n_after = (self["reject"] != 0).sum()
 
         if verbose:
@@ -248,18 +673,81 @@ class Plates(Table):
                 f"Marked {n_after - n_before} new rows as rejected; {n_after} total are rejected"
             )
 
-    def reject(self, tag: str, verbose: bool = True) -> PlateSelector:
-        return self._make_reject_selector(tag, verbose, self._apply_reject)
+    @property
+    def reject(self) -> PlateSelector:
+        """
+        An :ref:`action <lc-filtering>` modifying the plate-list in-place,
+        rejecting the selected rows.
 
-    def _apply_reject_unless(self, selector, flags, verbose: bool = True):
-        return self._apply_reject(selector, ~flags, verbose)
+        Usage is as follows::
 
-    def reject_unless(self, tag: str, verbose: bool = True) -> PlateSelector:
-        return self._make_reject_selector(tag, verbose, self._apply_reject_unless)
+            pl = sess.plates()
+
+            # Mark all points from meteor telescopes as rejected:
+            pl.reject.meteor(tag="meteor")
+
+        The ``tag`` keyword argument to the selector is mandatory. It specifies
+        a short, arbitrary "tag" documenting the reason for rejection. Each
+        unique tag is associated with a binary bit of the ``"reject"`` column,
+        and these bits are logically OR'ed together as rejections are established.
+        The maximum number of distinct rejection tags is 64, since the ``"reject"``
+        column is stored as a 64-bit integer.
+        """
+        return PlateSelector(self, self._apply_reject)
+
+    def _apply_reject_unless(self, flags, tag: str = None, verbose: bool = True):
+        return self._apply_reject(~flags, tag, verbose)
+
+    @property
+    def reject_unless(self) -> PlateSelector:
+        """
+        An :ref:`action <lc-filtering>` modifying the plate-list in-place,
+        rejecting rows not matching the selection.
+
+        Usage is as follows::
+
+            pl = sess.plates()
+
+            # Mark all plates *not* from narrow-field telescopes as rejected:
+            pl.reject_unless.narrow(tag="lowrez")
+
+            # This is equivalent to:
+            pl.reject.not_.narrow(tag="lowrez")
+
+        The ``tag`` keyword argument to the selector is mandatory. It specifies
+        a short, arbitrary "tag" documenting the reason for rejection. Each
+        unique tag is associated with a binary bit of the ``"reject"`` column,
+        and these bits are logically OR'ed together as rejections are established.
+        The maximum number of distinct rejection tags is 64, since the ``"reject"``
+        column is stored as a 64-bit integer.
+        """
+        return PlateSelector(self, self._apply_reject_unless)
 
     # Non-filtering actions on this list
 
     def series_info(self) -> Table:
+        """
+        Obtain a table summarizing information about the different plate series
+        in the non-rejected rows of the current table.
+
+        Returns
+        =======
+        `astropy.table.Table`
+            A table of summary information
+
+        Notes
+        =====
+        Columns in the returned table include:
+
+        - ``"series"``: the plate series in question
+        - ``"count"``: the number of plates from the series in *self*
+        - ``"kind"``: the `daschlab.series.SeriesKind` of this series
+        - ``"plate_scale"``: the typical plate scale of this series (in arcsec/mm)
+        - ``"aperture"``: the telescope aperture of this series (in meters)
+        - ``"description"``: a textual description of this series
+
+        The table is sorted by decreasing ``"count"``.
+        """
         g = self.drop.rejected(verbose=False).group_by("series")
 
         t = Table()
@@ -279,6 +767,23 @@ class Plates(Table):
         return t
 
     def time_coverage(self) -> figure:
+        """
+        Plot the observing time coverage of the non-rejected plates in this list.
+
+        Returns
+        =======
+        `bokeh.plotting.figure`
+            A plot.
+
+        Notes
+        =====
+        The plot is generated by using a Gaussian kernel density estimator to
+        smooth out the plate observation times.
+
+        The function `bokeh.io.show` (imported as ``bokeh.plotting.show``) is
+        called on the figure before it is returned, so you don't need to do that
+        yourself.
+        """
         from scipy.stats import gaussian_kde
 
         plot_years = np.linspace(1875, 1995, 200)
@@ -303,6 +808,33 @@ class Plates(Table):
         return p
 
     def show(self, plate_ref: PlateReferenceType) -> ImageLayer:
+        """
+        Display the cutout of the specified plate in the WWT view.
+
+        Parameters
+        ==========
+        plate_ref : `PlateRow` or `int`
+            If this argument is an integer, it is interpreted as the "local ID"
+            of a plate. Local IDs are assigned in chronological order of
+            observing time, so a value of ``0`` shows the first plate. This will
+            only work if the selected plate is scanned and WCS-solved.
+
+            If this argument is an instance of `PlateRow`, the specified plate
+            is shown.
+
+        Returns
+        =======
+        `pywwt.layers.ImageLayer`
+          This is the WWT image layer object corresponding to the displayed FITS
+          file. You can use it to programmatically control aspects of how the
+          file is displayed, such as the colormap.
+
+        Notes
+        =====
+        In order to use this method, you must first have called
+        `daschlab.Session.connect_to_wwt()`. If needed, this method will execute
+        an API call and download the cutout to be displayed, which may be slow.
+        """
         plate = self._sess._resolve_plate_reference(plate_ref)
 
         if self._layers is None:
@@ -327,6 +859,28 @@ class Plates(Table):
         return il
 
     def export_cutouts_to_pdf(self, pdfpath: str, **kwargs):
+        """
+        Export cutouts of the plates in this list to a PDF file.
+
+        Parameters
+        ==========
+        pdf_path : `str`
+            The path at which the output file will be written. This path is
+            *not* relative to the `daschlab.Session` root.
+        refcat_stdmag_limit : optional `float`
+            If specified, only sources from the reference catalog brigher than
+            the specified ``stdmag`` limit will be overlaid on the cutouts.
+            Otherwise, all refcat sources are overlaid, including very faint
+            ones and ones without ``stdmag`` records.
+
+        Notes
+        =====
+        This operation will attempt to download a cutout for every WCS-solved
+        plate in the list. This can be extremely slow, as well as creating a lot
+        of work for the API server. Only use it for short plate lists.
+
+        The format of the created file needs to be documented.
+        """
         _pdf_export(pdfpath, self._sess, self, **kwargs)
 
 
