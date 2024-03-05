@@ -1454,6 +1454,9 @@ def _get_lc_cols(
                     if ctype is not None:
                         cdata.append(ctype(row))
 
+    if colnames is None or not saw_sep:
+        raise Exception("incomplete lightcurve data response")
+
     return dict(t for t in zip(colnames, coldata) if t[1] is not None)
 
 
