@@ -914,7 +914,6 @@ def _get_plate_cols(
     colnames = None
     coltypes = None
     coldata = None
-    saw_sep = False
 
     with requests.get(url, stream=True) as resp:
         for line in resp.iter_lines():
@@ -925,12 +924,13 @@ def _get_plate_cols(
                 colnames = pieces
                 coltypes = [_COLTYPES.get(c) for c in colnames]
                 coldata = [[] if t is not None else None for t in coltypes]
-            elif not saw_sep:
-                saw_sep = True
             else:
                 for row, ctype, cdata in zip(pieces, coltypes, coldata):
                     if ctype is not None:
                         cdata.append(ctype(row))
+
+    if colnames is None:
+        raise Exception("empty plate-table data response")
 
     return dict(t for t in zip(colnames, coldata) if t[1] is not None)
 
