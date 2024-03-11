@@ -96,9 +96,16 @@ class RefcatSources(Table):
     _layer: Optional[TableLayer] = None
     Row = RefcatSourceRow
 
-    def show(self) -> TableLayer:
+    def show(self, mag_limit: Optional[float] = None) -> TableLayer:
         """
         Display the catalog contents in the WWT view.
+
+        Parameters
+        ==========
+        mag_limit : optional `float` or `None`
+            For display purposes, source magnitudes fainter (larger) than this
+            value, or missing magnitudes, will be filled in with this value.
+            If unspecified (`None`), the maximum unmasked value will be used.
 
         Returns
         =======
@@ -125,14 +132,23 @@ class RefcatSources(Table):
         compat_table["dec"] = self["pos"].dec.deg
         del compat_table["pos"]
 
+        # Fill in unlisted magnitudes with the limit value.
+
+        if mag_limit is None:
+            mag_limit = compat_table["stdmag"].max()
+
+        compat_table["viz_mag"] = np.minimum(
+            compat_table["stdmag"].filled(mag_limit), mag_limit
+        )
+
         wwt = self._sess.wwt()
         tl = wwt.layers.add_table_layer(compat_table)
         self._layer = tl
 
         tl.marker_type = "circle"
-        tl.size_att = "stdmag"
-        tl.size_vmin = compat_table["stdmag"].max()
-        tl.size_vmax = compat_table["stdmag"].min()
+        tl.size_att = "viz_mag"
+        tl.size_vmin = mag_limit
+        tl.size_vmax = compat_table["viz_mag"].min()
         tl.size_scale = 10.0
         return tl
 
