@@ -42,6 +42,6 @@ def _query_cutout(
     fits = requests.get(url).content
 
     if len(fits) < 80:
-        raise Exception("cutout query failed")
+        raise Exception("cutout query failed (plate may not be scanned and WCS-solved)")
 
     return fits

@@ -193,11 +193,9 @@ class Session:
             self._refcat._sess = self
         except FileNotFoundError:
             self._refcat = None
-
-            if self._query is not None:
-                self._info(
-                    f"- Refcat not yet fetched - run something like `{self._my_var_name()}.select_refcat('apass')`"
-                )
+            self._info(
+                f"- Refcat not yet fetched - after setting target, run something like `{self._my_var_name()}.select_refcat('apass')`"
+            )
         else:
             if len(self._refcat):
                 self._info(
@@ -215,11 +213,6 @@ class Session:
             self._plates._sess = self
         except FileNotFoundError:
             self._plates = None
-
-            if self._query is not None:
-                self._info(
-                    f"- Plates not yet fetched - run something like `{self._my_var_name()}.plates()`"
-                )
         else:
             self._info(f"- Plates: {len(self._plates)} relevant plates")
 
