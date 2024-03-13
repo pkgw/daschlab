@@ -23,3 +23,6 @@ for f in *.rst; do
     *) rm -f "$f"
     esac
 done
+
+echo "- Restoring SessionQuery.rst to work around issue with dataclasses-json inherited members"
+git restore daschlab.query.SessionQuery.rst
