@@ -606,6 +606,12 @@ class LightcurveSelector:
             lc.ACTION.not_.CONDITION()
             # should be equivalent to:
             lc.ACTION.where(~lc.match.CONDITION())
+
+        The logical negation implied by this method can cause problems if your
+        lightcurve contains nondetections. For instance, the above logic will select
+        both detections with measured separations above 10 arcsec, and nondetections
+        where the separation is undefined. If you are using this selection to
+        reject data points, the latter aspect may be undesirable.
         """
         return LightcurveSelector(self._lc, self._apply_not)
 
@@ -789,16 +795,23 @@ class LightcurveSelector:
         return self._apply(m, **kwargs)
 
     def sep_below(
-        self, sep_limit: u.Quantity = 20 * u.arcsec, **kwargs
+        self,
+        sep_limit: u.Quantity = 20 * u.arcsec,
+        pos: Optional[SkyCoord] = None,
+        **kwargs,
     ) -> "Lightcurve":
         """
-        Act on rows whose positional separations from the mean source location
+        Act on rows whose positional separations from the source location
         are below the limit.
 
         Parameters
         ==========
         sep_limit : optional `astropy.units.Quantity`, default 20 arcsec
             The separation limit. This should be an angular quantity.
+        pos : optional `astropy.coordinates.SkyCoord` or `None`
+            The position relative to which the separation is computed. If
+            unspecified, the lightcurve `~daschlab.lightcurves.Lightcurve.mean_pos()`
+            is used.
         **kwargs
             Parameters forwarded to the action.
 
@@ -820,13 +833,63 @@ class LightcurveSelector:
 
         Notes
         =====
-        The separation is computed against the value returned by
-        `Lightcurve.mean_pos()`. Nondetection rows do not have an associated
-        position, and will never match this filter.
+        Nondetection rows do not have an associated position, and will never
+        match this filter.
         """
-        mp = self._lc.mean_pos()
-        seps = mp.separation(self._lc["pos"])
+        if pos is None:
+            pos = self._lc.mean_pos()
+
+        seps = pos.separation(self._lc["pos"])
         m = seps < sep_limit
+        return self._apply(m, **kwargs)
+
+    def sep_above(
+        self,
+        sep_limit: u.Quantity = 20 * u.arcsec,
+        pos: Optional[SkyCoord] = None,
+        **kwargs,
+    ) -> "Lightcurve":
+        """
+        Act on rows whose positional separations from the source location
+        are above the limit.
+
+        Parameters
+        ==========
+        sep_limit : optional `astropy.units.Quantity`, default 20 arcsec
+            The separation limit. This should be an angular quantity.
+        pos : optional `astropy.coordinates.SkyCoord` or `None`
+            The position relative to which the separation is computed. If
+            unspecified, the lightcurve `~Lightcurve.mean_pos()`
+            is used.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only detections beyond 10 arcsec
+        from the mean source position::
+
+            from astropy import units as u
+
+            lc = sess.lightcurve(some_local_id)
+            near = lc.keep_only.sep_above(10 * u.arcsec)
+
+        Notes
+        =====
+        Nondetection rows do not have an associated position, and will never
+        match this filter.
+        """
+        if pos is None:
+            pos = self._lc.mean_pos()
+
+        seps = pos.separation(self._lc["pos"])
+        m = seps > sep_limit
         return self._apply(m, **kwargs)
 
     def any_aflags(self, aflags: int, **kwargs) -> "Lightcurve":
@@ -1266,6 +1329,12 @@ class Lightcurve(Table):
         and these bits are logically OR'ed together as rejections are established.
         The maximum number of distinct rejection tags is 64, since the ``"reject"``
         column is stored as a 64-bit integer.
+
+        The logical negation used by this function can cause problems if your
+        lightcurve contains nondetections. For instance, if you intend to reject
+        points *unless* they are brighter than a mag of 15.0, you will also reject
+        all of the nondetections, even shallow upper limits consistent with that
+        cutoff.
         """
         return LightcurveSelector(self, self._apply_reject_unless)
 
