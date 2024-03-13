@@ -860,6 +860,7 @@ class LightcurveSelector:
             bad = lc.keep_only.any_aflags(filter)
         """
         m = (self._lc["aflags"] & aflags) != 0
+        m = m.filled(False)  # do *not* affect rows where this column is masked
         return self._apply(m, **kwargs)
 
     def local_id(self, local_id: int, **kwargs) -> "Lightcurve":
@@ -953,6 +954,7 @@ class LightcurveSelector:
         less-than rather than less-than-or-equals comparison.
         """
         m = self._lc["magcal_magdep"] < cutoff_mag
+        m = m.filled(False)  # do *not* affect rows where this column is masked
         return self._apply(m, **kwargs)
 
     def detected_and_fainter(self, cutoff_mag: float, **kwargs) -> "Lightcurve":
@@ -986,6 +988,7 @@ class LightcurveSelector:
         greater-than rather than greater-than-or-equals comparison.
         """
         m = self._lc["magcal_magdep"] > cutoff_mag
+        m = m.filled(False)  # do *not* affect rows where this column is masked
         return self._apply(m, **kwargs)
 
     def narrow(self, **kwargs) -> "Lightcurve":
