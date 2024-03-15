@@ -24,10 +24,11 @@ points with non-zero ``"reject"`` values.
 Filtering and Subsetting
 ========================
 
-`Lightcurve` objects are instances of the `astropy.table.Table` class, and in
-your data analysis you can use all of the usual `~astropy.table.Table`-related
-methods and functions that are available. In addition, the `Lightcurve` class
-provides a convenient set of tools for subsetting and filtering data.
+`Lightcurve` objects are instances of the `astropy.timeseries.TimeSeries` class,
+which in turn are instances of the `astropy.table.Table` class. In your data
+analysis you can use all of the usual methods and functions that these
+superclasses provide. In addition, the `Lightcurve` class provides a convenient
+set of tools for subsetting and filtering data.
 
 These tools take the form of paired “actions” and “selections”. The syntax for
 using them is as follows::
@@ -72,12 +73,14 @@ that you may need to be careful about selection logic. For instance::
 
 from enum import IntFlag
 from urllib.parse import urlencode
+import sys
 from typing import Dict, Optional, Tuple
 import warnings
 
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, Row
 from astropy.time import Time
+from astropy.timeseries import TimeSeries
 from astropy import units as u
 from astropy.utils.masked import Masked
 from bokeh.plotting import figure, show
@@ -606,6 +609,12 @@ class LightcurveSelector:
             lc.ACTION.not_.CONDITION()
             # should be equivalent to:
             lc.ACTION.where(~lc.match.CONDITION())
+
+        The logical negation implied by this method can cause problems if your
+        lightcurve contains nondetections. For instance, the above logic will select
+        both detections with measured separations above 10 arcsec, and nondetections
+        where the separation is undefined. If you are using this selection to
+        reject data points, the latter aspect may be undesirable.
         """
         return LightcurveSelector(self._lc, self._apply_not)
 
@@ -743,10 +752,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             astrom_rejects = lc.keep_only.rejected_with("astrom")
         """
-        bitnum0 = None
-
-        if self._lc._rejection_tags is not None:
-            bitnum0 = self._lc._rejection_tags.get(tag)
+        bitnum0 = self._lc._rejection_tags().get(tag)
 
         if bitnum0 is not None:
             m = (self._lc["reject"] & (1 << bitnum0)) != 0
@@ -789,16 +795,23 @@ class LightcurveSelector:
         return self._apply(m, **kwargs)
 
     def sep_below(
-        self, sep_limit: u.Quantity = 20 * u.arcsec, **kwargs
+        self,
+        sep_limit: u.Quantity = 20 * u.arcsec,
+        pos: Optional[SkyCoord] = None,
+        **kwargs,
     ) -> "Lightcurve":
         """
-        Act on rows whose positional separations from the mean source location
+        Act on rows whose positional separations from the source location
         are below the limit.
 
         Parameters
         ==========
         sep_limit : optional `astropy.units.Quantity`, default 20 arcsec
             The separation limit. This should be an angular quantity.
+        pos : optional `astropy.coordinates.SkyCoord` or `None`
+            The position relative to which the separation is computed. If
+            unspecified, the lightcurve `~daschlab.lightcurves.Lightcurve.mean_pos()`
+            is used.
         **kwargs
             Parameters forwarded to the action.
 
@@ -820,13 +833,63 @@ class LightcurveSelector:
 
         Notes
         =====
-        The separation is computed against the value returned by
-        `Lightcurve.mean_pos()`. Nondetection rows do not have an associated
-        position, and will never match this filter.
+        Nondetection rows do not have an associated position, and will never
+        match this filter.
         """
-        mp = self._lc.mean_pos()
-        seps = mp.separation(self._lc["pos"])
+        if pos is None:
+            pos = self._lc.mean_pos()
+
+        seps = pos.separation(self._lc["pos"])
         m = seps < sep_limit
+        return self._apply(m, **kwargs)
+
+    def sep_above(
+        self,
+        sep_limit: u.Quantity = 20 * u.arcsec,
+        pos: Optional[SkyCoord] = None,
+        **kwargs,
+    ) -> "Lightcurve":
+        """
+        Act on rows whose positional separations from the source location
+        are above the limit.
+
+        Parameters
+        ==========
+        sep_limit : optional `astropy.units.Quantity`, default 20 arcsec
+            The separation limit. This should be an angular quantity.
+        pos : optional `astropy.coordinates.SkyCoord` or `None`
+            The position relative to which the separation is computed. If
+            unspecified, the lightcurve `~Lightcurve.mean_pos()`
+            is used.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only detections beyond 10 arcsec
+        from the mean source position::
+
+            from astropy import units as u
+
+            lc = sess.lightcurve(some_local_id)
+            near = lc.keep_only.sep_above(10 * u.arcsec)
+
+        Notes
+        =====
+        Nondetection rows do not have an associated position, and will never
+        match this filter.
+        """
+        if pos is None:
+            pos = self._lc.mean_pos()
+
+        seps = pos.separation(self._lc["pos"])
+        m = seps > sep_limit
         return self._apply(m, **kwargs)
 
     def any_aflags(self, aflags: int, **kwargs) -> "Lightcurve":
@@ -1070,15 +1133,16 @@ class LightcurveSelector:
         return self._apply(m, **kwargs)
 
 
-class Lightcurve(Table):
+class Lightcurve(TimeSeries):
     """
     A DASCH lightcurve data table.
 
-    A `Lightcurve` is a subclass of `astropy.table.Table` containing DASCH
-    lightcurve data and associated lightcurve-specific methods. You can use all
-    of the usual methods and properties made available by the
-    `astropy.table.Table` class. Items provided by the `~astropy.table.Table`
-    class are not documented here.
+    A `Lightcurve` is a subclass of `astropy.timeseries.TimeSeries`, which in
+    turn is a subclass of `astropy.table.Table`. It contains DASCH lightcurve
+    data and associated lightcurve-specific methods. You can use all of the
+    usual methods and properties made available by the
+    `astropy.timeseries.TimeSeries` and `astropy.table.Table` classes. Items
+    provided by those classes are not documented here.
 
     You should not construct `Lightcurve` instances directly. Instead, obtain
     lightcurves using the `daschlab.Session.lightcurve()` method.
@@ -1086,12 +1150,12 @@ class Lightcurve(Table):
     **Columns are not documented here!** They are (**FIXME: will be**)
     documented more thoroughly in the DASCH data description pages.
 
-    See :ref:`the module-level documentation <lc-filtering>` for a summary of the
-    filtering and subsetting functionality provided by this class.
+    See :ref:`the module-level documentation <lc-filtering>` for a summary of
+    the filtering and subsetting functionality provided by this class.
 
     Cheat sheet:
 
-    - ``date`` is HJD midpoint
+    - ``time`` is HJD midpoint
     - ``magcal_magdep`` is preferred calibrated phot measurement
     - legacy plotter error bar is ``magcal_local_rms` * `error_bar_factor``, the
       latter being set to match the error bars to the empirical RMS, if this
@@ -1099,7 +1163,9 @@ class Lightcurve(Table):
     """
 
     Row = LightcurvePoint
-    _rejection_tags: Optional[Dict[str, int]] = None
+
+    def _rejection_tags(self) -> Dict[str, int]:
+        return self.meta.setdefault("daschlab_rejection_tags", {})
 
     # Filtering utilities
 
@@ -1111,7 +1177,6 @@ class Lightcurve(Table):
             nn = len(new)
             print(f"Dropped {len(self) - nn} rows; {nn} remaining")
 
-        new._rejection_tags = self._rejection_tags
         return new
 
     @property
@@ -1191,20 +1256,18 @@ class Lightcurve(Table):
                 'you must specify a rejection tag with a `tag="text"` keyword argument'
             )
 
-        if self._rejection_tags is None:
-            self._rejection_tags = {}
-
-        bitnum0 = self._rejection_tags.get(tag)
+        rt = self._rejection_tags()
+        bitnum0 = rt.get(tag)
 
         if bitnum0 is None:
-            bitnum0 = len(self._rejection_tags)
+            bitnum0 = len(rt)
             if bitnum0 > 63:
                 raise Exception("you cannot have more than 64 distinct rejection tags")
 
             if verbose:
                 print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
 
-            self._rejection_tags[tag] = bitnum0
+            rt[tag] = bitnum0
 
         return bitnum0
 
@@ -1266,8 +1329,48 @@ class Lightcurve(Table):
         and these bits are logically OR'ed together as rejections are established.
         The maximum number of distinct rejection tags is 64, since the ``"reject"``
         column is stored as a 64-bit integer.
+
+        The logical negation used by this function can cause problems if your
+        lightcurve contains nondetections. For instance, if you intend to reject
+        points *unless* they are brighter than a mag of 15.0, you will also reject
+        all of the nondetections, even shallow upper limits consistent with that
+        cutoff.
         """
         return LightcurveSelector(self, self._apply_reject_unless)
+
+    # Other methods
+
+    def apply_standard_rejections(self):
+        """
+        Apply a standard set of data-quality rejections to the lightcurve.
+
+        **Warning:** this function is in development. Do not rely on it to fully
+        clean your data.
+
+        Notes
+        =====
+        Until this functionality is more settled, the rejections will not be
+        documented here. See the source code to see what it does.
+        """
+
+        print(
+            "warning: this function is under development. Do *not* rely on it to fully clean your data.",
+            file=sys.stderr,
+        )
+
+        STANDARD_BAD_AFLAGS = (
+            AFlags.HIGH_BACKGROUND
+            | AFlags.LARGE_ISO_RMS
+            | AFlags.LARGE_LOCAL_SMOOTH_RMS
+            | AFlags.CLOSE_TO_LIMITING
+            | AFlags.BIN_DRAD_UNKNOWN
+        )
+
+        print("Rejecting standard AFLAGS ...")
+        self.reject.any_aflags(STANDARD_BAD_AFLAGS, tag="aflags")
+
+        n = self.count.nonrej_detected()
+        print(f"\nAfter rejections, {n} non-rejected detections remain.")
 
     def summary(self):
         """
@@ -1313,7 +1416,7 @@ class Lightcurve(Table):
         ==========
         x_axis : optional `str`, default ``"year"``
             The name of the column to use for the X axis. ``"year"`` is a
-            synthetic column calculated on-the-fly from the ``"date"`` column,
+            synthetic column calculated on-the-fly from the ``"time"`` column,
             corresponding to the ``jyear`` property of the `astropy.time.Time`
             object.
 
@@ -1332,17 +1435,17 @@ class Lightcurve(Table):
 
         with warnings.catch_warnings():
             # Shush ERFA warnings about dubious years -- if we don't change the
-            # `date` column to not be an Astropy Time, the warnings come out in
+            # `time` column to not be an Astropy Time, the warnings come out in
             # the `to_pandas()` call(s).
             warnings.simplefilter("ignore")
 
-            date = detect["date"]
-            detect["date"] = date.jd
-            detect["year"] = date.jyear
+            time = detect["time"]
+            detect["time"] = time.jd
+            detect["year"] = time.jyear
 
-            date = limit["date"]
-            limit["date"] = date.jd
-            limit["year"] = date.jyear
+            time = limit["time"]
+            limit["time"] = time.jd
+            limit["year"] = time.jyear
 
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
@@ -1370,9 +1473,9 @@ class Lightcurve(Table):
         show(p)
         return p
 
-    def scatter(self, x_axis: str, y_axis: str) -> figure:
+    def scatter(self, x_axis: str, y_axis: str, rejects: bool = False) -> figure:
         """
-        Make a Bokeh scatter plot of lightcurve data
+        Make a Bokeh scatter plot of lightcurve data.
 
         Parameters
         ==========
@@ -1380,6 +1483,8 @@ class Lightcurve(Table):
             The name of the column to use for the X axis.
         y_axis : `str`
             The name of the column to use for the Y axis.
+        rejects : optional `bool`, default `False`
+            Whether to include rejected points in the resulting plot.
 
         Returns
         =======
@@ -1392,6 +1497,11 @@ class Lightcurve(Table):
         called on the figure before it is returned, so you don't need to do that
         yourself.
         """
+        table = self
+
+        if not rejects:
+            table = table.drop.rejected()
+
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
             tooltips=[
@@ -1402,7 +1512,7 @@ class Lightcurve(Table):
             ],
         )
 
-        p.scatter(x_axis, y_axis, source=self.to_pandas())
+        p.scatter(x_axis, y_axis, source=table.to_pandas())
 
         if y_axis == "magcal_magdep":
             p.y_range.flipped = True
@@ -1493,9 +1603,10 @@ def _postproc_lc(input_cols) -> Lightcurve:
     # Columns are displayed in the order that they're added to the table,
     # so we try to register the most important ones first.
 
+    # this must be the first column:
+    table["time"] = Time(input_cols["Date"], format="jd")
     # this will be filled in for real at the end:
     table["local_id"] = np.zeros(len(gsc_bin_index))
-    table["date"] = Time(input_cols["Date"], format="jd")
     table["magcal_magdep"] = mq("magcal_magdep", np.float32, u.mag)
     table["magcal_magdep_rms"] = extra_mq("magcal_magdep_rms", np.float32, u.mag, 99.0)
     table["limiting_mag_local"] = all_q("limiting_mag_local", np.float32, u.mag)
@@ -1608,7 +1719,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["dasch_plate_version_id"] = all_c("plateVersionId", np.uint8)
     table["dasch_mask_index"] = all_c("maskIndex", np.uint8)
 
-    table.sort(["date"])
+    table.sort(["time"])
 
     table["local_id"] = np.arange(len(table))
     table["reject"] = np.zeros(len(table), dtype=np.uint64)

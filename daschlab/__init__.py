@@ -36,6 +36,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 import time
@@ -59,6 +60,7 @@ __all__ = [
     "InteractiveError",
     "Session",
     "open_session",
+    "source_name_to_fs_name",
 ]
 
 
@@ -151,13 +153,16 @@ class Session:
     _refcat: Optional[RefcatSources] = None
     _plates: Optional[Plates] = None
     _wwt: Optional[WWTJupyterWidget] = None
+    _refcat_table_layer: Optional["pywwt.layers.TableLayer"] = None
     _lc_cache: Dict[str, Lightcurve] = None
+    _plate_image_layer_cache: dict = None
 
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
         self._root = pathlib.Path(root)
         self._interactive = interactive
         self._internal_simg = _internal_simg
         self._lc_cache = {}
+        self._plate_image_layer_cache = {}
 
         try:
             self._root.mkdir(parents=True)
@@ -190,7 +195,7 @@ class Session:
             self._refcat = RefcatSources.read(
                 str(self.path("refcat.ecsv")), format="ascii.ecsv"
             )
-            self._refcat._sess = self
+            self._refcat.meta["daschlab_sess_key"] = str(self._root)
         except FileNotFoundError:
             self._refcat = None
             self._info(
@@ -210,7 +215,7 @@ class Session:
             self._plates = Plates.read(
                 str(self.path("plates.ecsv")), format="ascii.ecsv"
             )
-            self._plates._sess = self
+            self._plates.meta["daschlab_sess_key"] = str(self._root)
         except FileNotFoundError:
             self._plates = None
         else:
@@ -402,7 +407,7 @@ class Session:
         t0 = time.time()
         print("- Querying API ...", flush=True)
         self._refcat = _query_refcat(name, self._query.pos_as_skycoord(), REFCAT_RADIUS)
-        self._refcat._sess = self
+        self._refcat.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("refcat.ecsv") as f_new:
             self._refcat.write(f_new.name, format="ascii.ecsv", overwrite=True)
@@ -467,7 +472,7 @@ class Session:
         t0 = time.time()
         print("- Querying API ...", flush=True)
         self._plates = _query_plates(self._query.pos_as_skycoord(), PLATES_RADIUS)
-        self._plates._sess = self
+        self._plates.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("plates.ecsv") as f_new:
             self._plates.write(f_new.name, format="ascii.ecsv", overwrite=True)
@@ -753,8 +758,52 @@ class Session:
         return self._wwt
 
 
+_NAME_CONVERSION_FILTER_RE = re.compile("[^-+_.a-z0-9]")
+_NAME_CONVERSION_CONDENSE_RE = re.compile("__*")
+
+
+def source_name_to_fs_name(name: str) -> str:
+    """
+    Convert the name of an astronomical source to something convenient to use in
+    file names.
+
+    Parameters
+    ==========
+    name : `str`
+        The astronomical source name.
+
+    Returns
+    =======
+    The converted filesystem name.
+
+    Notes
+    =====
+    This function is a helper that is used to automatically generate names for
+    `Session` data directories. The transformation that it performs is
+    intentionally not precisely specified, but it does things like lowercasing
+    the input, removing spaces and special characters, and so on.
+    """
+    name = name.lower()
+    name = _NAME_CONVERSION_FILTER_RE.sub("_", name)
+    name = _NAME_CONVERSION_CONDENSE_RE.sub("_", name)
+    return name
+
+
+# We're not really that interested in maintaining a session cache ... but we
+# want some of our tables to "know about" their associated session. The sensible
+# way to do this is via their metadata, but Table metadata should be
+# plain-old-data: they are always deepcopied when copying tables, and we do
+# *not* want to be duplicating Sessions in these circumstances. By maintaining
+# this dict, the tables can locate their sessions based on a key rather than a
+# reference to the whole object.
+_session_cache: Dict[str, Session] = {}
+
+
 def open_session(
-    root: str = ".", interactive: bool = True, _internal_simg: str = ""
+    root: str = ".",
+    source: str = "",
+    interactive: bool = True,
+    _internal_simg: str = "",
 ) -> Session:
     """
     Open or create a new daschlab analysis session.
@@ -762,17 +811,38 @@ def open_session(
     Parameters
     ==========
     root : optional `str`, default ``"."``
-      A path to a directory that will contain all of the data files associated
-      with this analysis session.
+        A path to a directory that will contain all of the data files associated
+        with this analysis session. Overridden if *source_name* is specified.
+
+    source : optional `str`, default ``""``
+        If specified, derive *root* by processing this value with the function
+        `source_name_to_fs_name`. See the examples below. The resulting name
+        will be relative to the current directory and begin with ``daschlab_``.
 
     interactive : optional `bool`, default True
-      Whether this is an interactive analysis session. If True, various warnings
-      and errors will be printed under the assumption that a human will read
-      them, as opposed to raising exceptions with proper tracebacks.
+        Whether this is an interactive analysis session. If True, various
+        warnings and errors will be printed under the assumption that a human
+        will read them, as opposed to raising exceptions with proper tracebacks.
 
     Returns
     =======
     An initialized `Session` instance.
+
+    Examples
+    ========
+    Open a session whose data are stored in a specific directory::
+
+        from daschlab import open_session
+
+        sess = open_session(root="snia/1987a")
+
+    Open a session with a name automatically derived from a source name::
+
+        from daschlab import open_session
+
+        source = "SN 1987a"
+        sess = open_session(source=source)
+        sess.select_target(name=source)
 
     Notes
     =====
@@ -781,10 +851,22 @@ def open_session(
     can’t stop you from calling the `Session` constructor directly, but there
     should be no reason to do so.
     """
-    if interactive:
+    if interactive and not len(_session_cache):
         _maybe_install_custom_exception_formatter()
 
-    return Session(root, interactive=interactive, _internal_simg=_internal_simg)
+    if source:
+        root = "daschlab_" + source_name_to_fs_name(source)
+
+    sess = _session_cache.get(root)
+    if sess is None:
+        sess = Session(root, interactive=interactive, _internal_simg=_internal_simg)
+        _session_cache[root] = sess
+
+    return sess
+
+
+def _lookup_session(root: str) -> Session:
+    return _session_cache[root]
 
 
 # Typing stuff

@@ -27,6 +27,7 @@ LightcurveSelector
       ~LightcurveSelector.patrol
       ~LightcurveSelector.rejected
       ~LightcurveSelector.rejected_with
+      ~LightcurveSelector.sep_above
       ~LightcurveSelector.sep_below
       ~LightcurveSelector.series
       ~LightcurveSelector.undetected
@@ -49,6 +50,7 @@ LightcurveSelector
    .. automethod:: patrol
    .. automethod:: rejected
    .. automethod:: rejected_with
+   .. automethod:: sep_above
    .. automethod:: sep_below
    .. automethod:: series
    .. automethod:: undetected
