@@ -24,10 +24,11 @@ points with non-zero ``"reject"`` values.
 Filtering and Subsetting
 ========================
 
-`Lightcurve` objects are instances of the `astropy.table.Table` class, and in
-your data analysis you can use all of the usual `~astropy.table.Table`-related
-methods and functions that are available. In addition, the `Lightcurve` class
-provides a convenient set of tools for subsetting and filtering data.
+`Lightcurve` objects are instances of the `astropy.timeseries.TimeSeries` class,
+which in turn are instances of the `astropy.table.Table` class. In your data
+analysis you can use all of the usual methods and functions that these
+superclasses provide. In addition, the `Lightcurve` class provides a convenient
+set of tools for subsetting and filtering data.
 
 These tools take the form of paired “actions” and “selections”. The syntax for
 using them is as follows::
@@ -78,6 +79,7 @@ import warnings
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, Row
 from astropy.time import Time
+from astropy.timeseries import TimeSeries
 from astropy import units as u
 from astropy.utils.masked import Masked
 from bokeh.plotting import figure, show
@@ -1133,15 +1135,16 @@ class LightcurveSelector:
         return self._apply(m, **kwargs)
 
 
-class Lightcurve(Table):
+class Lightcurve(TimeSeries):
     """
     A DASCH lightcurve data table.
 
-    A `Lightcurve` is a subclass of `astropy.table.Table` containing DASCH
-    lightcurve data and associated lightcurve-specific methods. You can use all
-    of the usual methods and properties made available by the
-    `astropy.table.Table` class. Items provided by the `~astropy.table.Table`
-    class are not documented here.
+    A `Lightcurve` is a subclass of `astropy.timeseries.TimeSeries`, which in
+    turn is a subclass of `astropy.table.Table`. It contains DASCH lightcurve
+    data and associated lightcurve-specific methods. You can use all of the
+    usual methods and properties made available by the
+    `astropy.timeseries.TimeSeries` and `astropy.table.Table` classes. Items
+    provided by those classes are not documented here.
 
     You should not construct `Lightcurve` instances directly. Instead, obtain
     lightcurves using the `daschlab.Session.lightcurve()` method.
@@ -1149,12 +1152,12 @@ class Lightcurve(Table):
     **Columns are not documented here!** They are (**FIXME: will be**)
     documented more thoroughly in the DASCH data description pages.
 
-    See :ref:`the module-level documentation <lc-filtering>` for a summary of the
-    filtering and subsetting functionality provided by this class.
+    See :ref:`the module-level documentation <lc-filtering>` for a summary of
+    the filtering and subsetting functionality provided by this class.
 
     Cheat sheet:
 
-    - ``date`` is HJD midpoint
+    - ``time`` is HJD midpoint
     - ``magcal_magdep`` is preferred calibrated phot measurement
     - legacy plotter error bar is ``magcal_local_rms` * `error_bar_factor``, the
       latter being set to match the error bars to the empirical RMS, if this
@@ -1382,7 +1385,7 @@ class Lightcurve(Table):
         ==========
         x_axis : optional `str`, default ``"year"``
             The name of the column to use for the X axis. ``"year"`` is a
-            synthetic column calculated on-the-fly from the ``"date"`` column,
+            synthetic column calculated on-the-fly from the ``"time"`` column,
             corresponding to the ``jyear`` property of the `astropy.time.Time`
             object.
 
@@ -1401,17 +1404,17 @@ class Lightcurve(Table):
 
         with warnings.catch_warnings():
             # Shush ERFA warnings about dubious years -- if we don't change the
-            # `date` column to not be an Astropy Time, the warnings come out in
+            # `time` column to not be an Astropy Time, the warnings come out in
             # the `to_pandas()` call(s).
             warnings.simplefilter("ignore")
 
-            date = detect["date"]
-            detect["date"] = date.jd
-            detect["year"] = date.jyear
+            time = detect["time"]
+            detect["time"] = time.jd
+            detect["year"] = time.jyear
 
-            date = limit["date"]
-            limit["date"] = date.jd
-            limit["year"] = date.jyear
+            time = limit["time"]
+            limit["time"] = time.jd
+            limit["year"] = time.jyear
 
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
@@ -1569,9 +1572,10 @@ def _postproc_lc(input_cols) -> Lightcurve:
     # Columns are displayed in the order that they're added to the table,
     # so we try to register the most important ones first.
 
+    # this must be the first column:
+    table["time"] = Time(input_cols["Date"], format="jd")
     # this will be filled in for real at the end:
     table["local_id"] = np.zeros(len(gsc_bin_index))
-    table["date"] = Time(input_cols["Date"], format="jd")
     table["magcal_magdep"] = mq("magcal_magdep", np.float32, u.mag)
     table["magcal_magdep_rms"] = extra_mq("magcal_magdep_rms", np.float32, u.mag, 99.0)
     table["limiting_mag_local"] = all_q("limiting_mag_local", np.float32, u.mag)
@@ -1684,7 +1688,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["dasch_plate_version_id"] = all_c("plateVersionId", np.uint8)
     table["dasch_mask_index"] = all_c("maskIndex", np.uint8)
 
-    table.sort(["date"])
+    table.sort(["time"])
 
     table["local_id"] = np.arange(len(table))
     table["reject"] = np.zeros(len(table), dtype=np.uint64)
