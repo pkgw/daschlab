@@ -751,10 +751,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             astrom_rejects = lc.keep_only.rejected_with("astrom")
         """
-        bitnum0 = None
-
-        if self._lc._rejection_tags is not None:
-            bitnum0 = self._lc._rejection_tags.get(tag)
+        bitnum0 = self._lc._rejection_tags().get(tag)
 
         if bitnum0 is not None:
             m = (self._lc["reject"] & (1 << bitnum0)) != 0
@@ -1165,7 +1162,9 @@ class Lightcurve(TimeSeries):
     """
 
     Row = LightcurvePoint
-    _rejection_tags: Optional[Dict[str, int]] = None
+
+    def _rejection_tags(self) -> Dict[str, int]:
+        return self.meta.setdefault("daschlab_rejection_tags", {})
 
     # Filtering utilities
 
@@ -1177,7 +1176,6 @@ class Lightcurve(TimeSeries):
             nn = len(new)
             print(f"Dropped {len(self) - nn} rows; {nn} remaining")
 
-        new._rejection_tags = self._rejection_tags
         return new
 
     @property
@@ -1257,20 +1255,18 @@ class Lightcurve(TimeSeries):
                 'you must specify a rejection tag with a `tag="text"` keyword argument'
             )
 
-        if self._rejection_tags is None:
-            self._rejection_tags = {}
-
-        bitnum0 = self._rejection_tags.get(tag)
+        rt = self._rejection_tags()
+        bitnum0 = rt.get(tag)
 
         if bitnum0 is None:
-            bitnum0 = len(self._rejection_tags)
+            bitnum0 = len(rt)
             if bitnum0 > 63:
                 raise Exception("you cannot have more than 64 distinct rejection tags")
 
             if verbose:
                 print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
 
-            self._rejection_tags[tag] = bitnum0
+            rt[tag] = bitnum0
 
         return bitnum0
 
