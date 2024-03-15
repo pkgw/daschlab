@@ -1458,9 +1458,10 @@ class Lightcurve(TimeSeries):
         )
 
         if len(limit):
-            p.inverted_triangle(
+            p.scatter(
                 x_axis,
                 "limiting_mag_local",
+                marker="inverted_triangle",
                 fill_color="lightgray",
                 line_color=None,
                 source=limit.to_pandas(),
