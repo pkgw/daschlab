@@ -767,6 +767,69 @@ class Plates(Table):
 
         return t
 
+    def candidate_nice_cutouts(
+        self,
+        source_of_interest=0,
+        limit_cols: bool = True,
+        limit_rows: Optional[int] = 8,
+    ) -> "daschlab.lightcurves.Lightcurve":
+        """
+        Return a table with information about plates that might contain "nice"
+        imagery of the target, in some vague sense.
+
+        Parameters
+        ==========
+        source_of_interest : optional source reference, default ``0``
+            A source of interest that will be used to evaluate imaging quality.
+            The lightcurve for this source will be downloaded, with the
+            reference resolved as per the function
+            `daschlab.Session.lightcurve()`.
+
+        limit_cols : optional `bool`, default `True`
+            If true, drop various columns from the returned table. The preserved
+            columns will be only the ones relevant to inferring the plate image
+            quality.
+
+        limit_rows : optional `int` or None, default 10
+            If a positive integer, limit the returned table to only this many
+            rows.
+
+        Returns
+        =======
+        `daschlab.lightcurves.Lightcurve`
+            The returned table is actually a `~daschlab.lightcurves.Lightcurve`
+            table, re-sorted and potentially subsetted. The sort order will be
+            in decreasing predicted image quality based on the lightcurve data.
+
+        Notes
+        =====
+        The primary sort key is based on the limiting magnitude, which is a
+        quantity available even in rows of the lightcurve that do not detect the
+        source of interest. So, this method should be useful even if the source
+        is not easily detected. Other image-quality metadata, however, may be
+        missing, so this method will restrict itself to lightcurve rows with
+        detections if there are a sufficient number of them.
+        """
+        sess = self._sess()
+        lc = sess.lightcurve(source_of_interest)
+        lc = lc.drop.rejected(verbose=False)
+
+        # If we have an acceptable number of detections, consider only plates
+        # that detect the SOI. The cutoff here is totally arbitrary.
+        if lc.count.nonrej_detected() > 10:
+            lc = lc.keep_only.nonrej_detected(verbose=False)
+
+        lc.sort(["limiting_mag_local"], reverse=True)
+
+        if limit_cols:
+            cols = "limiting_mag_local plate_local_id series platenum fwhm_world ellipticity background".split()
+            lc = lc[cols]
+
+        if limit_rows and limit_rows > 0:
+            lc = lc[:limit_rows]
+
+        return lc
+
     def time_coverage(self) -> figure:
         """
         Plot the observing time coverage of the non-rejected plates in this list.
