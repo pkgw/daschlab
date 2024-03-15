@@ -1439,9 +1439,9 @@ class Lightcurve(Table):
         show(p)
         return p
 
-    def scatter(self, x_axis: str, y_axis: str) -> figure:
+    def scatter(self, x_axis: str, y_axis: str, rejects: bool = False) -> figure:
         """
-        Make a Bokeh scatter plot of lightcurve data
+        Make a Bokeh scatter plot of lightcurve data.
 
         Parameters
         ==========
@@ -1449,6 +1449,8 @@ class Lightcurve(Table):
             The name of the column to use for the X axis.
         y_axis : `str`
             The name of the column to use for the Y axis.
+        rejects : optional `bool`, default `False`
+            Whether to include rejected points in the resulting plot.
 
         Returns
         =======
@@ -1461,6 +1463,11 @@ class Lightcurve(Table):
         called on the figure before it is returned, so you don't need to do that
         yourself.
         """
+        table = self
+
+        if not rejects:
+            table = table.drop.rejected()
+
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
             tooltips=[
@@ -1471,7 +1478,7 @@ class Lightcurve(Table):
             ],
         )
 
-        p.scatter(x_axis, y_axis, source=self.to_pandas())
+        p.scatter(x_axis, y_axis, source=table.to_pandas())
 
         if y_axis == "magcal_magdep":
             p.y_range.flipped = True
