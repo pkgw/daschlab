@@ -36,6 +36,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 import time
@@ -59,6 +60,7 @@ __all__ = [
     "InteractiveError",
     "Session",
     "open_session",
+    "source_name_to_fs_name",
 ]
 
 
@@ -756,6 +758,37 @@ class Session:
         return self._wwt
 
 
+_NAME_CONVERSION_FILTER_RE = re.compile("[^-+_.a-z0-9]")
+_NAME_CONVERSION_CONDENSE_RE = re.compile("__*")
+
+
+def source_name_to_fs_name(name: str) -> str:
+    """
+    Convert the name of an astronomical source to something convenient to use in
+    file names.
+
+    Parameters
+    ==========
+    name : `str`
+        The astronomical source name.
+
+    Returns
+    =======
+    The converted filesystem name.
+
+    Notes
+    =====
+    This function is a helper that is used to automatically generate names for
+    `Session` data directories. The transformation that it performs is
+    intentionally not precisely specified, but it does things like lowercasing
+    the input, removing spaces and special characters, and so on.
+    """
+    name = name.lower()
+    name = _NAME_CONVERSION_FILTER_RE.sub("_", name)
+    name = _NAME_CONVERSION_CONDENSE_RE.sub("_", name)
+    return name
+
+
 # We're not really that interested in maintaining a session cache ... but we
 # want some of our tables to "know about" their associated session. The sensible
 # way to do this is via their metadata, but Table metadata should be
@@ -767,7 +800,10 @@ _session_cache: Dict[str, Session] = {}
 
 
 def open_session(
-    root: str = ".", interactive: bool = True, _internal_simg: str = ""
+    root: str = ".",
+    source: str = "",
+    interactive: bool = True,
+    _internal_simg: str = "",
 ) -> Session:
     """
     Open or create a new daschlab analysis session.
@@ -775,17 +811,38 @@ def open_session(
     Parameters
     ==========
     root : optional `str`, default ``"."``
-      A path to a directory that will contain all of the data files associated
-      with this analysis session.
+        A path to a directory that will contain all of the data files associated
+        with this analysis session. Overridden if *source_name* is specified.
+
+    source : optional `str`, default ``""``
+        If specified, derive *root* by processing this value with the function
+        `source_name_to_fs_name`. See the examples below. The resulting name
+        will be relative to the current directory and begin with ``daschlab_``.
 
     interactive : optional `bool`, default True
-      Whether this is an interactive analysis session. If True, various warnings
-      and errors will be printed under the assumption that a human will read
-      them, as opposed to raising exceptions with proper tracebacks.
+        Whether this is an interactive analysis session. If True, various
+        warnings and errors will be printed under the assumption that a human
+        will read them, as opposed to raising exceptions with proper tracebacks.
 
     Returns
     =======
     An initialized `Session` instance.
+
+    Examples
+    ========
+    Open a session whose data are stored in a specific directory::
+
+        from daschlab import open_session
+
+        sess = open_session(root="snia/1987a")
+
+    Open a session with a name automatically derived from a source name::
+
+        from daschlab import open_session
+
+        source = "SN 1987a"
+        sess = open_session(source=source)
+        sess.select_target(name=source)
 
     Notes
     =====
@@ -796,6 +853,9 @@ def open_session(
     """
     if interactive and not len(_session_cache):
         _maybe_install_custom_exception_formatter()
+
+    if source:
+        root = "daschlab_" + source_name_to_fs_name(source)
 
     sess = _session_cache.get(root)
     if sess is None:
