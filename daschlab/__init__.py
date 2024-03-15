@@ -45,6 +45,7 @@ import warnings
 
 from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
+import astropy.utils.exceptions
 import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
@@ -853,6 +854,9 @@ def open_session(
     """
     if interactive and not len(_session_cache):
         _maybe_install_custom_exception_formatter()
+
+        # ERFA thinks that our years are "dubious". Feh!
+        warnings.simplefilter("ignore", astropy.utils.exceptions.ErfaWarning)
 
     if source:
         root = "daschlab_" + source_name_to_fs_name(source)
