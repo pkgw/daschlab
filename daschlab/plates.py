@@ -265,10 +265,7 @@ class PlateSelector:
             pl = sess.plates()
             astrom_rejects = pl.keep_only.rejected_with("astrom")
         """
-        bitnum0 = None
-
-        if self._plates._rejection_tags is not None:
-            bitnum0 = self._plates._rejection_tags.get(tag)
+        bitnum0 = self._plates._rejection_tags().get(tag)
 
         if bitnum0 is not None:
             m = (self._plates["reject"] & (1 << bitnum0)) != 0
@@ -575,10 +572,18 @@ class Plates(Table):
     functionality provided by this class.
     """
 
-    _sess: "daschlab.Session" = None
-    _rejection_tags: Optional[Dict[str, int]] = None
-    _layers: Dict[int, ImageLayer] = None
     Row = PlateRow
+
+    def _sess(self) -> "daschlab.Session":
+        from . import _lookup_session
+
+        return _lookup_session(self.meta["daschlab_sess_key"])
+
+    def _rejection_tags(self) -> Dict[str, int]:
+        return self.meta.setdefault("daschlab_rejection_tags", {})
+
+    def _layers(self) -> Dict[int, ImageLayer]:
+        return self._sess()._plate_image_layer_cache
 
     # Filtering infrastructure
 
@@ -590,8 +595,6 @@ class Plates(Table):
             nn = len(new)
             print(f"Dropped {len(self) - nn} rows; {nn} remaining")
 
-        new._sess = self._sess
-        new._rejection_tags = self._rejection_tags
         return new
 
     @property
@@ -645,20 +648,18 @@ class Plates(Table):
                 'you must specify a rejection tag with a `tag="text"` keyword argument'
             )
 
-        if self._rejection_tags is None:
-            self._rejection_tags = {}
-
-        bitnum0 = self._rejection_tags.get(tag)
+        rt = self._rejection_tags()
+        bitnum0 = rt.get(tag)
 
         if bitnum0 is None:
-            bitnum0 = len(self._rejection_tags)
+            bitnum0 = len(rt)
             if bitnum0 > 63:
                 raise Exception("you cannot have more than 64 distinct rejection tags")
 
             if verbose:
                 print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
 
-            self._rejection_tags[tag] = bitnum0
+            rt[tag] = bitnum0
 
         return bitnum0
 
@@ -835,18 +836,15 @@ class Plates(Table):
         `daschlab.Session.connect_to_wwt()`. If needed, this method will execute
         an API call and download the cutout to be displayed, which may be slow.
         """
-        plate = self._sess._resolve_plate_reference(plate_ref)
-
-        if self._layers is None:
-            self._layers = {}
+        plate = self._sess()._resolve_plate_reference(plate_ref)
 
         local_id = plate["local_id"]
-        il = self._layers.get(local_id)
+        il = self._layers().get(local_id)
 
         if il is not None:
             return il  # TODO: bring it to the top, etc?
 
-        fits_relpath = self._sess.cutout(plate)
+        fits_relpath = self._sess().cutout(plate)
         if fits_relpath is None:
             from . import InteractiveError
 
@@ -854,8 +852,12 @@ class Plates(Table):
                 f"cannot create a cutout for plate #{local_id:05d} ({plate.plate_id()})"
             )
 
-        il = self._sess.wwt().layers.add_image_layer(str(self._sess.path(fits_relpath)))
-        self._layers[local_id] = il
+        il = (
+            self._sess()
+            .wwt()
+            .layers.add_image_layer(str(self._sess().path(fits_relpath)))
+        )
+        self._layers()[local_id] = il
         return il
 
     def export_cutouts_to_pdf(self, pdfpath: str, **kwargs):
@@ -881,7 +883,7 @@ class Plates(Table):
 
         The format of the created file needs to be documented.
         """
-        _pdf_export(pdfpath, self._sess, self, **kwargs)
+        _pdf_export(pdfpath, self._sess(), self, **kwargs)
 
 
 def _query_plates(

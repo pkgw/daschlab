@@ -152,12 +152,14 @@ class Session:
     _plates: Optional[Plates] = None
     _wwt: Optional[WWTJupyterWidget] = None
     _lc_cache: Dict[str, Lightcurve] = None
+    _plate_image_layer_cache: dict = None
 
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
         self._root = pathlib.Path(root)
         self._interactive = interactive
         self._internal_simg = _internal_simg
         self._lc_cache = {}
+        self._plate_image_layer_cache = {}
 
         try:
             self._root.mkdir(parents=True)
@@ -210,7 +212,7 @@ class Session:
             self._plates = Plates.read(
                 str(self.path("plates.ecsv")), format="ascii.ecsv"
             )
-            self._plates._sess = self
+            self._plates.meta["daschlab_sess_key"] = str(self._root)
         except FileNotFoundError:
             self._plates = None
         else:
@@ -467,7 +469,7 @@ class Session:
         t0 = time.time()
         print("- Querying API ...", flush=True)
         self._plates = _query_plates(self._query.pos_as_skycoord(), PLATES_RADIUS)
-        self._plates._sess = self
+        self._plates.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("plates.ecsv") as f_new:
             self._plates.write(f_new.name, format="ascii.ecsv", overwrite=True)
@@ -753,6 +755,16 @@ class Session:
         return self._wwt
 
 
+# We're not really that interested in maintaining a session cache ... but we
+# want some of our tables to "know about" their associated session. The sensible
+# way to do this is via their metadata, but Table metadata should be
+# plain-old-data: they are always deepcopied when copying tables, and we do
+# *not* want to be duplicating Sessions in these circumstances. By maintaining
+# this dict, the tables can locate their sessions based on a key rather than a
+# reference to the whole object.
+_session_cache: Dict[str, Session] = {}
+
+
 def open_session(
     root: str = ".", interactive: bool = True, _internal_simg: str = ""
 ) -> Session:
@@ -781,10 +793,19 @@ def open_session(
     can’t stop you from calling the `Session` constructor directly, but there
     should be no reason to do so.
     """
-    if interactive:
+    if interactive and not len(_session_cache):
         _maybe_install_custom_exception_formatter()
 
-    return Session(root, interactive=interactive, _internal_simg=_internal_simg)
+    sess = _session_cache.get(root)
+    if sess is None:
+        sess = Session(root, interactive=interactive, _internal_simg=_internal_simg)
+        _session_cache[root] = sess
+
+    return sess
+
+
+def _lookup_session(root: str) -> Session:
+    return _session_cache[root]
 
 
 # Typing stuff
