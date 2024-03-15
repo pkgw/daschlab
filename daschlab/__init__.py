@@ -151,6 +151,7 @@ class Session:
     _refcat: Optional[RefcatSources] = None
     _plates: Optional[Plates] = None
     _wwt: Optional[WWTJupyterWidget] = None
+    _refcat_table_layer: Optional["pywwt.layers.TableLayer"] = None
     _lc_cache: Dict[str, Lightcurve] = None
     _plate_image_layer_cache: dict = None
 
@@ -192,7 +193,7 @@ class Session:
             self._refcat = RefcatSources.read(
                 str(self.path("refcat.ecsv")), format="ascii.ecsv"
             )
-            self._refcat._sess = self
+            self._refcat.meta["daschlab_sess_key"] = str(self._root)
         except FileNotFoundError:
             self._refcat = None
             self._info(
@@ -404,7 +405,7 @@ class Session:
         t0 = time.time()
         print("- Querying API ...", flush=True)
         self._refcat = _query_refcat(name, self._query.pos_as_skycoord(), REFCAT_RADIUS)
-        self._refcat._sess = self
+        self._refcat.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("refcat.ecsv") as f_new:
             self._refcat.write(f_new.name, format="ascii.ecsv", overwrite=True)

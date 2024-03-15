@@ -69,7 +69,7 @@ class RefcatSourceRow(Row):
         For details, see `daschlab.Session.lightcurve()`, which implements this
         functionality.
         """
-        return self._table._sess.lightcurve(self)
+        return self._table._sess().lightcurve(self)
 
 
 SourceReferenceType = Union[RefcatSourceRow, int, Literal["click"]]
@@ -92,9 +92,12 @@ class RefcatSources(Table):
     documented more thoroughly in the DASCH data description pages.
     """
 
-    _sess: "daschlab.Session" = None
-    _layer: Optional[TableLayer] = None
     Row = RefcatSourceRow
+
+    def _sess(self) -> "daschlab.Session":
+        from . import _lookup_session
+
+        return _lookup_session(self.meta["daschlab_sess_key"])
 
     def show(self, mag_limit: Optional[float] = None) -> TableLayer:
         """
@@ -120,8 +123,9 @@ class RefcatSources(Table):
         In order to use this method, you must first have called
         `daschlab.Session.connect_to_wwt()`.
         """
-        if self._layer is not None:
-            return self._layer
+        sess = self._sess()
+        if sess._refcat_table_layer is not None:
+            return sess._refcat_table_layer
 
         # TODO: pywwt can't handle Astropy tables that use a SkyCoord
         # to hold positional information. That should be fixed, but it
@@ -141,9 +145,9 @@ class RefcatSources(Table):
             compat_table["stdmag"].filled(mag_limit), mag_limit
         )
 
-        wwt = self._sess.wwt()
+        wwt = sess.wwt()
         tl = wwt.layers.add_table_layer(compat_table)
-        self._layer = tl
+        sess._refcat_table_layer = tl
 
         tl.marker_type = "circle"
         tl.size_att = "viz_mag"
