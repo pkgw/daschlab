@@ -1440,8 +1440,12 @@ class Lightcurve(TimeSeries):
             tooltips=[
                 ("LocalID", "@local_id"),
                 ("Mag.", "@magcal_magdep"),
-                ("Epoch", "@year"),
-                ("Plate", "@series@platenum mosnum @mosnum pl_loc_id @plate_local_id"),
+                ("Lim. Mag.", "@limiting_mag_local"),
+                ("Epoch", "@year{0000.0000}"),
+                (
+                    "Plate",
+                    "@series@platenum / mosnum @mosnum / plLocID @plate_local_id",
+                ),
             ],
         )
 
