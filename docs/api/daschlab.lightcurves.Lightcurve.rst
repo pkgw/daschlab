@@ -22,6 +22,7 @@ Lightcurve
 
    .. autosummary::
 
+      ~Lightcurve.apply_standard_rejections
       ~Lightcurve.mean_pos
       ~Lightcurve.plot
       ~Lightcurve.scatter
@@ -39,6 +40,7 @@ Lightcurve
 
    .. rubric:: Methods Documentation
 
+   .. automethod:: apply_standard_rejections
    .. automethod:: mean_pos
    .. automethod:: plot
    .. automethod:: scatter

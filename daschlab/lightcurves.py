@@ -73,6 +73,7 @@ that you may need to be careful about selection logic. For instance::
 
 from enum import IntFlag
 from urllib.parse import urlencode
+import sys
 from typing import Dict, Optional, Tuple
 import warnings
 
@@ -1336,6 +1337,40 @@ class Lightcurve(TimeSeries):
         cutoff.
         """
         return LightcurveSelector(self, self._apply_reject_unless)
+
+    # Other methods
+
+    def apply_standard_rejections(self):
+        """
+        Apply a standard set of data-quality rejections to the lightcurve.
+
+        **Warning:** this function is in development. Do not rely on it to fully
+        clean your data.
+
+        Notes
+        =====
+        Until this functionality is more settled, the rejections will not be
+        documented here. See the source code to see what it does.
+        """
+
+        print(
+            "warning: this function is under development. Do *not* rely on it to fully clean your data.",
+            file=sys.stderr,
+        )
+
+        STANDARD_BAD_AFLAGS = (
+            AFlags.HIGH_BACKGROUND
+            | AFlags.LARGE_ISO_RMS
+            | AFlags.LARGE_LOCAL_SMOOTH_RMS
+            | AFlags.CLOSE_TO_LIMITING
+            | AFlags.BIN_DRAD_UNKNOWN
+        )
+
+        print("Rejecting standard AFLAGS ...")
+        self.reject.any_aflags(STANDARD_BAD_AFLAGS, tag="aflags")
+
+        n = self.count.nonrej_detected()
+        print(f"\nAfter rejections, {n} non-rejected detections remain.")
 
     def summary(self):
         """
