@@ -75,10 +75,9 @@ from enum import IntFlag
 from urllib.parse import urlencode
 import sys
 from typing import Dict, Optional, Tuple
-import warnings
 
 from astropy.coordinates import SkyCoord
-from astropy.table import Table, Row
+from astropy.table import Row
 from astropy.time import Time
 from astropy.timeseries import TimeSeries
 from astropy import units as u
@@ -1433,19 +1432,8 @@ class Lightcurve(TimeSeries):
         """
         detect, limit = self.drop.rejected(verbose=False).split_by.detected()
 
-        with warnings.catch_warnings():
-            # Shush ERFA warnings about dubious years -- if we don't change the
-            # `time` column to not be an Astropy Time, the warnings come out in
-            # the `to_pandas()` call(s).
-            warnings.simplefilter("ignore")
-
-            time = detect["time"]
-            detect["time"] = time.jd
-            detect["year"] = time.jyear
-
-            time = limit["time"]
-            limit["time"] = time.jd
-            limit["year"] = time.jyear
+        detect["year"] = detect["time"].jyear
+        limit["year"] = limit["time"].jyear
 
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
