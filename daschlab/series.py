@@ -211,7 +211,9 @@ _add("r", SeriesKind.NARROW, 390, 0.075, "3-inch Ross Fecker")
 _add("rb", SeriesKind.NARROW, 395.5, 0.075, "3-inch Ross Fecker")
 _add("rh", SeriesKind.NARROW, 391.3, 0.075, "3-inch Ross Fecker")
 _add("rl", SeriesKind.NARROW, 290, 0.1, "4-inch Ross Lundin")
-# _add("ro", SeriesKind., NULL |               390 |     NULL | NULL")
+_add(
+    "ro", SeriesKind.NARROW, 390, 0.075, "Unknown Oak Ridge setup! Aperture is a guess."
+)
 # _add("rp", SeriesKind., NULL |              NULL |     NULL | NULL")
 _add("s", SeriesKind.NARROW, 26.3, 1.52, "60 inch Common")
 _add("sb", SeriesKind.NARROW, 26, 1.5, "60-inch Rockefeller Reflector")
