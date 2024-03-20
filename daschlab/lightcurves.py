@@ -925,6 +925,40 @@ class LightcurveSelector:
         m = m.filled(False)  # do *not* affect rows where this column is masked
         return self._apply(m, **kwargs)
 
+    def any_bflags(self, bflags: int, **kwargs) -> "Lightcurve":
+        """
+        Act on rows that have any of the specific BFLAGS bits set.
+
+        Parameters
+        ==========
+        bflags : `int` or `BFlags`
+            The flag or flags to check for. If this value contains multiple
+            non-zero bits, a row will be selected if its BFLAGS contain
+            *any* of the specified bits.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only rows with the specified flags::
+
+            from astropy import units as u
+            from daschlab.lightcurves import BFlags
+
+            lc = sess.lightcurve(some_local_id)
+            filter = BFlags.EXTINCTION_CAL_APPLIED | BFlags.MAG_DEP_CAL_APPLIED
+            full_cal = lc.keep_only.any_bflags(filter)
+        """
+        m = (self._lc["bflags"] & bflags) != 0
+        m = m.filled(False)  # do *not* affect rows where this column is masked
+        return self._apply(m, **kwargs)
+
     def local_id(self, local_id: int, **kwargs) -> "Lightcurve":
         """
         Act on the row with the specified local ID.
