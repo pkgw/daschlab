@@ -1251,7 +1251,9 @@ class Lightcurve(TimeSeries):
         """
         return LightcurveSelector(self, self._apply_split_by)
 
-    def _process_reject_tag(self, tag: str, verbose: bool) -> int:
+    def _process_reject_tag(
+        self, tag: str, verbose: bool, dry_run: bool = False
+    ) -> int:
         if not tag:
             raise Exception(
                 'you must specify a rejection tag with a `tag="text"` keyword argument'
@@ -1265,22 +1267,37 @@ class Lightcurve(TimeSeries):
             if bitnum0 > 63:
                 raise Exception("you cannot have more than 64 distinct rejection tags")
 
-            if verbose:
-                print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
+            if verbose or dry_run:
+                verb = "WOULD assign" if dry_run else "Assigned"
+                print(f"{verb} rejection tag `{tag}` to bit number {bitnum0 + 1}")
 
-            rt[tag] = bitnum0
+            if not dry_run:
+                rt[tag] = bitnum0
 
         return bitnum0
 
-    def _apply_reject(self, flags, tag: str = None, verbose: bool = True):
-        bitnum0 = self._process_reject_tag(tag, verbose)
+    def _apply_reject(
+        self, flags, tag: str = None, verbose: bool = True, dry_run: bool = False
+    ):
+        bitnum0 = self._process_reject_tag(tag, verbose, dry_run=dry_run)
         n_before = (self["reject"] != 0).sum()
-        self["reject"][flags] |= 1 << bitnum0
-        n_after = (self["reject"] != 0).sum()
 
-        if verbose:
+        if dry_run:
+            col = self["reject"].copy()
+        else:
+            col = self["reject"]
+
+        col[flags] |= 1 << bitnum0
+        n_after = (col != 0).sum()
+
+        if verbose or dry_run:
+            if dry_run:
+                verb1, verb2 = "DID NOT mark", "would be"
+            else:
+                verb1, verb2 = "Marked", "are"
+
             print(
-                f"Marked {n_after - n_before} new rows as rejected; {n_after} total are rejected"
+                f"{verb1} {n_after - n_before} new rows as rejected; {n_after} total {verb2} rejected"
             )
 
     @property
@@ -1299,14 +1316,24 @@ class Lightcurve(TimeSeries):
         The ``tag`` keyword argument to the selector is mandatory. It specifies
         a short, arbitrary "tag" documenting the reason for rejection. Each
         unique tag is associated with a binary bit of the ``"reject"`` column,
-        and these bits are logically OR'ed together as rejections are established.
-        The maximum number of distinct rejection tags is 64, since the ``"reject"``
-        column is stored as a 64-bit integer.
+        and these bits are logically OR'ed together as rejections are
+        established. The maximum number of distinct rejection tags is 64, since
+        the ``"reject"`` column is stored as a 64-bit integer.
+
+        If a ``verbose`` keyword argument is true (the default), a message will
+        be printed summarizing the number of rejected rows. If false, nothing
+        will be printed.
+
+        If a ``dry_run`` keyword argument is true (*not* the default), the
+        ``"reject"`` column will not actually be modified. Instead, a message
+        about what *would* have changed is printed.
         """
         return LightcurveSelector(self, self._apply_reject)
 
-    def _apply_reject_unless(self, flags, tag: str = None, verbose: bool = True):
-        return self._apply_reject(~flags, tag, verbose)
+    def _apply_reject_unless(
+        self, flags, tag: str = None, verbose: bool = True, dry_run: bool = False
+    ):
+        return self._apply_reject(~flags, tag, verbose, dry_run)
 
     @property
     def reject_unless(self) -> LightcurveSelector:
