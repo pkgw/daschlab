@@ -17,6 +17,7 @@ LightcurveSelector
    .. autosummary::
 
       ~LightcurveSelector.any_aflags
+      ~LightcurveSelector.any_bflags
       ~LightcurveSelector.brighter
       ~LightcurveSelector.detected
       ~LightcurveSelector.detected_and_fainter
@@ -40,6 +41,7 @@ LightcurveSelector
    .. rubric:: Methods Documentation
 
    .. automethod:: any_aflags
+   .. automethod:: any_bflags
    .. automethod:: brighter
    .. automethod:: detected
    .. automethod:: detected_and_fainter

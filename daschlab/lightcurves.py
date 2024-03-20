@@ -925,6 +925,40 @@ class LightcurveSelector:
         m = m.filled(False)  # do *not* affect rows where this column is masked
         return self._apply(m, **kwargs)
 
+    def any_bflags(self, bflags: int, **kwargs) -> "Lightcurve":
+        """
+        Act on rows that have any of the specific BFLAGS bits set.
+
+        Parameters
+        ==========
+        bflags : `int` or `BFlags`
+            The flag or flags to check for. If this value contains multiple
+            non-zero bits, a row will be selected if its BFLAGS contain
+            *any* of the specified bits.
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Lightcurve`
+            However, different actions may return different types. For instance,
+            the `Lightcurve.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only rows with the specified flags::
+
+            from astropy import units as u
+            from daschlab.lightcurves import BFlags
+
+            lc = sess.lightcurve(some_local_id)
+            filter = BFlags.EXTINCTION_CAL_APPLIED | BFlags.MAG_DEP_CAL_APPLIED
+            full_cal = lc.keep_only.any_bflags(filter)
+        """
+        m = (self._lc["bflags"] & bflags) != 0
+        m = m.filled(False)  # do *not* affect rows where this column is masked
+        return self._apply(m, **kwargs)
+
     def local_id(self, local_id: int, **kwargs) -> "Lightcurve":
         """
         Act on the row with the specified local ID.
@@ -1076,7 +1110,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             narrow = lc.keep_only.narrow()
         """
-        m = [SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]]
+        m = np.array([SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]])
         return self._apply(m, **kwargs)
 
     def patrol(self, **kwargs) -> "Lightcurve":
@@ -1102,7 +1136,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             patrol = lc.keep_only.patrol()
         """
-        m = [SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]]
+        m = np.array([SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]])
         return self._apply(m, **kwargs)
 
     def meteor(self, **kwargs) -> "Lightcurve":
@@ -1128,7 +1162,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             meteor = lc.keep_only.meteor()
         """
-        m = [SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]]
+        m = np.array([SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]])
         return self._apply(m, **kwargs)
 
 
@@ -1251,7 +1285,9 @@ class Lightcurve(TimeSeries):
         """
         return LightcurveSelector(self, self._apply_split_by)
 
-    def _process_reject_tag(self, tag: str, verbose: bool) -> int:
+    def _process_reject_tag(
+        self, tag: str, verbose: bool, dry_run: bool = False
+    ) -> int:
         if not tag:
             raise Exception(
                 'you must specify a rejection tag with a `tag="text"` keyword argument'
@@ -1265,22 +1301,37 @@ class Lightcurve(TimeSeries):
             if bitnum0 > 63:
                 raise Exception("you cannot have more than 64 distinct rejection tags")
 
-            if verbose:
-                print(f"Assigned rejection tag `{tag}` to bit number {bitnum0 + 1}")
+            if verbose or dry_run:
+                verb = "WOULD assign" if dry_run else "Assigned"
+                print(f"{verb} rejection tag `{tag}` to bit number {bitnum0 + 1}")
 
-            rt[tag] = bitnum0
+            if not dry_run:
+                rt[tag] = bitnum0
 
         return bitnum0
 
-    def _apply_reject(self, flags, tag: str = None, verbose: bool = True):
-        bitnum0 = self._process_reject_tag(tag, verbose)
+    def _apply_reject(
+        self, flags, tag: str = None, verbose: bool = True, dry_run: bool = False
+    ):
+        bitnum0 = self._process_reject_tag(tag, verbose, dry_run=dry_run)
         n_before = (self["reject"] != 0).sum()
-        self["reject"][flags] |= 1 << bitnum0
-        n_after = (self["reject"] != 0).sum()
 
-        if verbose:
+        if dry_run:
+            col = self["reject"].copy()
+        else:
+            col = self["reject"]
+
+        col[flags] |= 1 << bitnum0
+        n_after = (col != 0).sum()
+
+        if verbose or dry_run:
+            if dry_run:
+                verb1, verb2 = "DID NOT mark", "would be"
+            else:
+                verb1, verb2 = "Marked", "are"
+
             print(
-                f"Marked {n_after - n_before} new rows as rejected; {n_after} total are rejected"
+                f"{verb1} {n_after - n_before} new rows as rejected; {n_after} total {verb2} rejected"
             )
 
     @property
@@ -1299,14 +1350,24 @@ class Lightcurve(TimeSeries):
         The ``tag`` keyword argument to the selector is mandatory. It specifies
         a short, arbitrary "tag" documenting the reason for rejection. Each
         unique tag is associated with a binary bit of the ``"reject"`` column,
-        and these bits are logically OR'ed together as rejections are established.
-        The maximum number of distinct rejection tags is 64, since the ``"reject"``
-        column is stored as a 64-bit integer.
+        and these bits are logically OR'ed together as rejections are
+        established. The maximum number of distinct rejection tags is 64, since
+        the ``"reject"`` column is stored as a 64-bit integer.
+
+        If a ``verbose`` keyword argument is true (the default), a message will
+        be printed summarizing the number of rejected rows. If false, nothing
+        will be printed.
+
+        If a ``dry_run`` keyword argument is true (*not* the default), the
+        ``"reject"`` column will not actually be modified. Instead, a message
+        about what *would* have changed is printed.
         """
         return LightcurveSelector(self, self._apply_reject)
 
-    def _apply_reject_unless(self, flags, tag: str = None, verbose: bool = True):
-        return self._apply_reject(~flags, tag, verbose)
+    def _apply_reject_unless(
+        self, flags, tag: str = None, verbose: bool = True, dry_run: bool = False
+    ):
+        return self._apply_reject(~flags, tag, verbose, dry_run)
 
     @property
     def reject_unless(self) -> LightcurveSelector:
@@ -1409,7 +1470,9 @@ class Lightcurve(TimeSeries):
         mdec = detns["pos"].dec.deg.mean()
         return SkyCoord(mra, mdec, unit=u.deg, frame="icrs")
 
-    def plot(self, x_axis="year") -> figure:
+    def plot(
+        self, x_axis: str = "year", callout: Optional[np.ndarray] = None
+    ) -> figure:
         """
         Plot the lightcurve using default settings.
 
@@ -1421,10 +1484,24 @@ class Lightcurve(TimeSeries):
             corresponding to the ``jyear`` property of the `astropy.time.Time`
             object.
 
+        callout : optional `numpy.ndarray`, default `None`
+            If provided, this should be a boolean array of the same size as
+            the lightcurve table. Points (both detections and nondetections)
+            for which the array is true will be visually "called out" in the
+            plot, highlighted in red.
+
         Returns
         =======
         `bokeh.plotting.figure`
             A plot.
+
+        Examples
+        ========
+        The `match` selector combines conveniently with the *callout* functionality
+        in constructs like this::
+
+            # Call out points in the lightcurve with the "suspected defect" flag
+            lc.plot(callout=lc.match.any_aflags(AFlags.SUSPECTED_DEFECT))
 
         Notes
         =====
@@ -1432,10 +1509,28 @@ class Lightcurve(TimeSeries):
         called on the figure before it is returned, so you don't need to do that
         yourself.
         """
-        detect, limit = self.drop.rejected(verbose=False).split_by.detected()
+        # We have to split by `callout` before dropping any rows, becauase it is
+        # a boolean filter array sized just for us. After that's done, the next
+        # order of business is to drop rejected rows. Then we can add helper
+        # columns that we don't want to preserve in `self`.
 
-        detect["year"] = detect["time"].jyear
-        limit["year"] = limit["time"].jyear
+        if callout is None:
+            main = self.drop.rejected(verbose=False)
+            called_out = None
+            callout_detect = None
+            callout_limit = None
+        else:
+            called_out, main = self.split_by.where(callout)
+            called_out = called_out.drop.rejected(verbose=False)
+            called_out["year"] = called_out["time"].jyear
+
+            main = main.drop.rejected(verbose=False)
+
+        main["year"] = main["time"].jyear
+        main_detect, main_limit = main.split_by.detected()
+
+        if callout is not None:
+            callout_detect, callout_limit = called_out.split_by.detected()
 
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
@@ -1451,18 +1546,37 @@ class Lightcurve(TimeSeries):
             ],
         )
 
-        if len(limit):
+        if len(main_limit):
             p.scatter(
                 x_axis,
                 "limiting_mag_local",
                 marker="inverted_triangle",
                 fill_color="lightgray",
                 line_color=None,
-                source=limit.to_pandas(),
+                source=main_limit.to_pandas(),
             )
 
-        if len(detect):
-            p.scatter(x_axis, "magcal_magdep", source=detect.to_pandas())
+        if callout_limit and len(callout_limit):
+            p.scatter(
+                x_axis,
+                "limiting_mag_local",
+                marker="inverted_triangle",
+                fill_color="lightcoral",
+                line_color=None,
+                source=callout_limit.to_pandas(),
+            )
+
+        if len(main_detect):
+            p.scatter(x_axis, "magcal_magdep", source=main_detect.to_pandas())
+
+        if callout_detect and len(callout_detect):
+            p.scatter(
+                x_axis,
+                "magcal_magdep",
+                fill_color="crimson",
+                line_color=None,
+                source=callout_detect.to_pandas(),
+            )
 
         p.y_range.flipped = True
         show(p)
