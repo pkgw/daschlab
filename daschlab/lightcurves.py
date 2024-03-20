@@ -1436,7 +1436,9 @@ class Lightcurve(TimeSeries):
         mdec = detns["pos"].dec.deg.mean()
         return SkyCoord(mra, mdec, unit=u.deg, frame="icrs")
 
-    def plot(self, x_axis="year") -> figure:
+    def plot(
+        self, x_axis: str = "year", callout: Optional[np.ndarray] = None
+    ) -> figure:
         """
         Plot the lightcurve using default settings.
 
@@ -1448,10 +1450,24 @@ class Lightcurve(TimeSeries):
             corresponding to the ``jyear`` property of the `astropy.time.Time`
             object.
 
+        callout : optional `numpy.ndarray`, default `None`
+            If provided, this should be a boolean array of the same size as
+            the lightcurve table. Points (both detections and nondetections)
+            for which the array is true will be visually "called out" in the
+            plot, highlighted in red.
+
         Returns
         =======
         `bokeh.plotting.figure`
             A plot.
+
+        Examples
+        ========
+        The `match` selector combines conveniently with the *callout* functionality
+        in constructs like this::
+
+            # Call out points in the lightcurve with the "suspected defect" flag
+            lc.plot(callout=lc.match.any_aflags(AFlags.SUSPECTED_DEFECT))
 
         Notes
         =====
@@ -1459,10 +1475,28 @@ class Lightcurve(TimeSeries):
         called on the figure before it is returned, so you don't need to do that
         yourself.
         """
-        detect, limit = self.drop.rejected(verbose=False).split_by.detected()
+        # We have to split by `callout` before dropping any rows, becauase it is
+        # a boolean filter array sized just for us. After that's done, the next
+        # order of business is to drop rejected rows. Then we can add helper
+        # columns that we don't want to preserve in `self`.
 
-        detect["year"] = detect["time"].jyear
-        limit["year"] = limit["time"].jyear
+        if callout is None:
+            main = self.drop.rejected(verbose=False)
+            called_out = None
+            callout_detect = None
+            callout_limit = None
+        else:
+            called_out, main = self.split_by.where(callout)
+            called_out = called_out.drop.rejected(verbose=False)
+            called_out["year"] = called_out["time"].jyear
+
+            main = main.drop.rejected(verbose=False)
+
+        main["year"] = main["time"].jyear
+        main_detect, main_limit = main.split_by.detected()
+
+        if callout is not None:
+            callout_detect, callout_limit = called_out.split_by.detected()
 
         p = figure(
             tools="pan,wheel_zoom,box_zoom,reset,hover",
@@ -1478,18 +1512,37 @@ class Lightcurve(TimeSeries):
             ],
         )
 
-        if len(limit):
+        if len(main_limit):
             p.scatter(
                 x_axis,
                 "limiting_mag_local",
                 marker="inverted_triangle",
                 fill_color="lightgray",
                 line_color=None,
-                source=limit.to_pandas(),
+                source=main_limit.to_pandas(),
             )
 
-        if len(detect):
-            p.scatter(x_axis, "magcal_magdep", source=detect.to_pandas())
+        if callout_limit and len(callout_limit):
+            p.scatter(
+                x_axis,
+                "limiting_mag_local",
+                marker="inverted_triangle",
+                fill_color="lightcoral",
+                line_color=None,
+                source=callout_limit.to_pandas(),
+            )
+
+        if len(main_detect):
+            p.scatter(x_axis, "magcal_magdep", source=main_detect.to_pandas())
+
+        if callout_detect and len(callout_detect):
+            p.scatter(
+                x_axis,
+                "magcal_magdep",
+                fill_color="crimson",
+                line_color=None,
+                source=callout_detect.to_pandas(),
+            )
 
         p.y_range.flipped = True
         show(p)
