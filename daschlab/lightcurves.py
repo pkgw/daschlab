@@ -1143,11 +1143,13 @@ class Lightcurve(TimeSeries):
     `astropy.timeseries.TimeSeries` and `astropy.table.Table` classes. Items
     provided by those classes are not documented here.
 
+    The actual data contained in these tables — the columns — are documented
+    elsewhere, `on the main DASCH website`_.
+
+    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/lightcurve-columns/
+
     You should not construct `Lightcurve` instances directly. Instead, obtain
     lightcurves using the `daschlab.Session.lightcurve()` method.
-
-    **Columns are not documented here!** They are (**FIXME: will be**)
-    documented more thoroughly in the DASCH data description pages.
 
     See :ref:`the module-level documentation <lc-filtering>` for a summary of
     the filtering and subsetting functionality provided by this class.
