@@ -1110,7 +1110,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             narrow = lc.keep_only.narrow()
         """
-        m = [SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]]
+        m = np.array([SERIES[k].kind == SeriesKind.NARROW for k in self._lc["series"]])
         return self._apply(m, **kwargs)
 
     def patrol(self, **kwargs) -> "Lightcurve":
@@ -1136,7 +1136,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             patrol = lc.keep_only.patrol()
         """
-        m = [SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]]
+        m = np.array([SERIES[k].kind == SeriesKind.PATROL for k in self._lc["series"]])
         return self._apply(m, **kwargs)
 
     def meteor(self, **kwargs) -> "Lightcurve":
@@ -1162,7 +1162,7 @@ class LightcurveSelector:
             lc = sess.lightcurve(some_local_id)
             meteor = lc.keep_only.meteor()
         """
-        m = [SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]]
+        m = np.array([SERIES[k].kind == SeriesKind.METEOR for k in self._lc["series"]])
         return self._apply(m, **kwargs)
 
 

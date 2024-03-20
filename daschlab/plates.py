@@ -422,7 +422,9 @@ class PlateSelector:
             pl = sess.plates()
             narrow = pl.keep_only.narrow()
         """
-        m = [SERIES[k].kind == SeriesKind.NARROW for k in self._plates["series"]]
+        m = np.array(
+            [SERIES[k].kind == SeriesKind.NARROW for k in self._plates["series"]]
+        )
         return self._apply(m, **kwargs)
 
     def patrol(self, **kwargs) -> "Plates":
@@ -448,7 +450,9 @@ class PlateSelector:
             pl = sess.plates()
             patrol = pl.keep_only.patrol()
         """
-        m = [SERIES[k].kind == SeriesKind.PATROL for k in self._plates["series"]]
+        m = np.array(
+            [SERIES[k].kind == SeriesKind.PATROL for k in self._plates["series"]]
+        )
         return self._apply(m, **kwargs)
 
     def meteor(self, **kwargs) -> "Plates":
@@ -474,7 +478,9 @@ class PlateSelector:
             pl = sess.plates()
             meteor = pl.keep_only.meteor()
         """
-        m = [SERIES[k].kind == SeriesKind.METEOR for k in self._plates["series"]]
+        m = np.array(
+            [SERIES[k].kind == SeriesKind.METEOR for k in self._plates["series"]]
+        )
         return self._apply(m, **kwargs)
 
     def plate_names(self, names: Iterable[str], **kwargs) -> "Plates":
