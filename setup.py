@@ -57,7 +57,7 @@ setup_args = dict(
         "pywwt>=0.23",
         "reproject>=0.13",
         "requests>=2",
-        "scipy>=1.12",
+        "scipy>=1.10",
     ],
     extras_require={
         "docs": [
