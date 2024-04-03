@@ -1629,6 +1629,91 @@ class Lightcurve(TimeSeries):
         show(p)
         return p
 
+    def export(self, path: str, format: str = "csv", drop_rejects: bool = True):
+        """
+        Save a copy of this lightcurve to a file.
+
+        Parameters
+        ==========
+        path : `str`
+            The path at which the exported lightcurve data will be saved.
+        format : `str`, default ``"csv"``
+            The file format in which to save the data. Currently, the only
+            allowed value is ``"csv"``.
+        drop_rejects : `bool`, default `True`
+            If True, rejected points will not appear in the output file at all.
+            Otherwise, they will be included, and there will be a ``"reject"``
+            column reproducing their rejection status.
+
+        Notes
+        =====
+        The default ``"csv"`` output format only exports a subset of the table columns
+        known as the “medium” subset. It is defined in `the lightcurve table documentation`_.
+
+        .. _the lightcurve table documentation: https://dasch.cfa.harvard.edu/drnext/lightcurve-columns/#medium-columns
+        """
+
+        if format != "csv":
+            raise ValueError(f"illegal `format`: {format!r}")
+
+        if drop_rejects:
+            elc = self.drop.rejected(verbose=False)
+            del elc["reject"]
+        else:
+            elc = self.copy(True)
+
+        pos_index = list(elc.columns).index("pos")
+        ra_deg = self["pos"].ra.deg
+        pos_mask = ~np.isfinite(ra_deg)
+        elc.add_columns(
+            (
+                np.ma.array(ra_deg, mask=pos_mask),
+                np.ma.array(self["pos"].dec.deg, mask=pos_mask),
+            ),
+            indexes=[pos_index, pos_index],
+            names=["ra_deg", "dec_deg"],
+            copy=False,
+        )
+        del elc["pos"]
+
+        DEL_COLS = [
+            "a2flags",
+            "b2flags",
+            "dasch_mask_index",
+            "dasch_photdb_version_id",
+            "dasch_plate_version_id",
+            "flux_iso",
+            "flux_max",
+            "gsc_bin_index",
+            "local_bin_index",
+            "local_id",
+            "mag_aper",
+            "mag_auto",
+            "mag_iso",
+            "magcal_iso",
+            "magcal_iso_rms",
+            "magcal_local",
+            "magcal_magdep_rms",
+            "magdep_bin",
+            "plate_local_id",
+            "series_id",
+            "spatial_bin",
+            "sxt_iso0",
+            "sxt_iso1",
+            "sxt_iso2",
+            "sxt_iso3",
+            "sxt_iso4",
+            "sxt_iso5",
+            "sxt_iso6",
+            "sxt_iso7",
+            "sxt_number",
+        ]
+
+        for c in DEL_COLS:
+            del elc[c]
+
+        elc.write(path, format="ascii.csv", overwrite=True)
+
 
 def _query_lc(
     refcat: str,
