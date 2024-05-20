@@ -22,6 +22,7 @@ Plates
    .. autosummary::
 
       ~Plates.candidate_nice_cutouts
+      ~Plates.export
       ~Plates.export_cutouts_to_pdf
       ~Plates.series_info
       ~Plates.show
@@ -39,6 +40,7 @@ Plates
    .. rubric:: Methods Documentation
 
    .. automethod:: candidate_nice_cutouts
+   .. automethod:: export
    .. automethod:: export_cutouts_to_pdf
    .. automethod:: series_info
    .. automethod:: show

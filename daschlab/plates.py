@@ -929,6 +929,66 @@ class Plates(Table):
         self._layers()[local_id] = il
         return il
 
+    def export(self, path: str, format: str = "csv", drop_rejects: bool = True):
+        """
+        Save a copy of this plate list to a file.
+
+        Parameters
+        ==========
+        path : `str`
+            The path at which the exported plate list data will be saved.
+        format : `str`, default ``"csv"``
+            The file format in which to save the data. Currently, the only
+            allowed value is ``"csv"``.
+        drop_rejects : `bool`, default `True`
+            If True, rejected plates will not appear in the output file at all.
+            Otherwise, they will be included, and there will be a ``"reject"``
+            column reproducing their rejection status.
+
+        Notes
+        =====
+        The default ``"csv"`` output format only exports a subset of the table columns
+        known as the “medium” subset. It is defined in `the plate-list table documentation`_.
+
+        .. _the plate-list table documentation: https://dasch.cfa.harvard.edu/drnext/platelist-columns/#medium-columns
+        """
+
+        if format != "csv":
+            raise ValueError(f"illegal `format`: {format!r}")
+
+        if drop_rejects:
+            elc = self.drop.rejected(verbose=False)
+            del elc["reject"]
+        else:
+            elc = self.copy(True)
+
+        pos_index = list(elc.columns).index("pos")
+        ra_deg = self["pos"].ra.deg
+        pos_mask = ~np.isfinite(ra_deg)
+        elc.add_columns(
+            (
+                np.ma.array(ra_deg, mask=pos_mask),
+                np.ma.array(self["pos"].dec.deg, mask=pos_mask),
+            ),
+            indexes=[pos_index, pos_index],
+            names=["ra_deg", "dec_deg"],
+            copy=False,
+        )
+        del elc["pos"]
+
+        DEL_COLS = [
+            "binflags",
+            "local_id",
+            "mos_date",
+            "scannum",
+            "scan_date",
+        ]
+
+        for c in DEL_COLS:
+            del elc[c]
+
+        elc.write(path, format="ascii.csv", overwrite=True)
+
     def export_cutouts_to_pdf(self, pdfpath: str, **kwargs):
         """
         Export cutouts of the plates in this list to a PDF file.
