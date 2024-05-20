@@ -570,8 +570,10 @@ class Plates(Table):
     You should not construct `Plates` instances directly. Instead, obtain the
     full table using the `daschlab.Session.plates()` method.
 
-    **Columns are not documented here!** They are (**FIXME: will be**)
-    documented more thoroughly in the DASCH data description pages.
+    The actual data contained in these tables — the columns — are documented
+    elsewhere, `on the main DASCH website`_.
+
+    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/platelist-columns/
 
     See :ref:`the module-level documentation <lc-filtering>` of the
     `daschlab.lightcurves` for a summary of the filtering and subsetting
