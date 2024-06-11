@@ -19,7 +19,6 @@ pip install \
   notebook \
   pillow \
   pywwt \
-  reproject \
   requests \
   scipy \
   shapely \

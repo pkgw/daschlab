@@ -46,7 +46,7 @@ setup_args = dict(
     license="MIT",
     include_package_data=True,
     install_requires=[
-        "astropy>=5.1",
+        "astropy>=6",
         "bokeh>=3.1",
         "dataclasses-json>=0.6",
         "ipykernel>=6",
@@ -55,7 +55,6 @@ setup_args = dict(
         "pycairo>=1.20",
         "pytz>=2024",
         "pywwt>=0.23",
-        "reproject>=0.13",
         "requests>=2",
         "scipy>=1.10",
     ],
