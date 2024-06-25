@@ -686,9 +686,19 @@ class Session:
         t0 = time.time()
         print("- Querying API ...", flush=True)
         center = self.query().pos_as_skycoord()
-        fits_data = _query_cutout(
-            plate["series"], plate["platenum"], plate["mosnum"], center
-        )
+
+        try:
+            fits_data = _query_cutout(
+                plate["series"], plate["platenum"], plate["mosnum"], center
+            )
+        except Exception as e:
+            # Right now, this could happen either because the API failed in a
+            # transient way, or because the plate was not scanned and
+            # WCS-solved. It would be good to be able to distinguish these
+            # cases.
+            self._warn(f"failed to fetch cutout for {plate_id}: {e}")
+            return None
+
         print(f"- Fetched {len(fits_data)} bytes in {time.time()-t0:.0f} seconds")
 
         # Add a bunch of headers using the metadata that we have
