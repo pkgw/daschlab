@@ -1005,12 +1005,16 @@ class Plates(Table):
             the specified ``stdmag`` limit will be overlaid on the cutouts.
             Otherwise, all refcat sources are overlaid, including very faint
             ones and ones without ``stdmag`` records.
+        no_download : optional `bool`, default False
+            If set to true, no cutouts will be downloaded. Only cutouts
+            that are already cached locally will be used to construct the PDF.
 
         Notes
         =====
-        This operation will attempt to download a cutout for every WCS-solved
-        plate in the list. This can be extremely slow, as well as creating a lot
-        of work for the API server. Only use it for short plate lists.
+        This operation will by default attempt to download a cutout for every
+        WCS-solved plate in the list. This can be extremely slow, as well as
+        creating a lot of work for the API server. Only use it for short plate
+        lists.
 
         The format of the created file needs to be documented.
         """
@@ -1218,6 +1222,7 @@ def _pdf_export(
     sess: "Session",
     plates: Plates,
     refcat_stdmag_limit: Optional[float] = None,
+    no_download: bool = False,
 ):
     PLOT_CENTERING_CIRCLE = True
     PLOT_SOURCES = True
@@ -1247,19 +1252,20 @@ def _pdf_export(
             f"Filtered input list of {n_orig} plates down to {n_filtered} for display"
         )
 
-    print(
-        f"Ensuring that we have cutouts for {n_filtered} plates, this may take a while ..."
-    )
-    t0 = time.time()
+    if not no_download:
+        print(
+            f"Ensuring that we have cutouts for {n_filtered} plates, this may take a while ..."
+        )
+        t0 = time.time()
 
-    for plate in plates:
-        if not sess.cutout(plate):
-            raise Exception(
-                f"unable to fetch cutout for plate LocalId {plate['local_id']}"
-            )
+        for plate in plates:
+            if not sess.cutout(plate):
+                raise Exception(
+                    f"unable to fetch cutout for plate LocalId {plate['local_id']}"
+                )
 
-    elapsed = time.time() - t0
-    print(f"... completed in {elapsed:.0f} seconds")
+        elapsed = time.time() - t0
+        print(f"... completed in {elapsed:.0f} seconds")
 
     # Set up refcat sources (could add filtering, etc.)
 
@@ -1296,7 +1302,9 @@ def _pdf_export(
             center_distance_cm = plate["center_distance"]
             edge_distance_cm = plate["edge_distance"]
 
-            fits_relpath = sess.cutout(plate)
+            fits_relpath = sess.cutout(plate, no_download=no_download)
+            if fits_relpath is None:
+                continue
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")

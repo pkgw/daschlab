@@ -607,43 +607,49 @@ class Session:
         assert isinstance(plate_ref, PlateRow)
         return plate_ref
 
-    def cutout(self, plate_ref: "PlateReferenceType") -> Optional[str]:
+    def cutout(
+        self, plate_ref: "PlateReferenceType", no_download: bool = False
+    ) -> Optional[str]:
         """
         Obtain a FITS cutout for the specified plate.
 
         Parameters
         ==========
         plate_ref : `int` or `~daschlab.plates.PlateRow`
-          If this argument is an integer, it is interpreted as the "local ID" of
-          a row in the plates table.
+            If this argument is an integer, it is interpreted as the "local ID"
+            of a row in the plates table.
 
-          If this argument is an instance of `~daschlab.plates.PlateRow`, the
-          cutout for the specified plate is obtained.
+            If this argument is an instance of `~daschlab.plates.PlateRow`, the
+            cutout for the specified plate is obtained.
+
+        no_download : optional `bool`, default False
+            If set to true, no attempt will be made to download the requested
+            cutout. If it is already cached on disk, the path will be returned;
+            otherwise, `None` will be returned.
 
         Returns
         =======
         A `str` or `None`.
-          If the former, the cutout was successfully fetched; the value is a
-          path to a local FITS file containing the cutout data, *relative to
-          the session root*. If the latter, a cutout could not be obtained.
-          This could happen if the plate has not been scanned, among other
-          reasons.
+            If the former, the cutout was successfully fetched; the value is a
+            path to a local FITS file containing the cutout data, *relative to the
+            session root*. If the latter, a cutout could not be obtained. This
+            could happen if the plate has not been scanned, among other reasons.
 
         Examples
         ========
         Load the cutout of the chronologically-first calibrated observation of
         the target field (the plate list is in chronological order)::
 
-          from astropy.io import fits
+            from astropy.io import fits
 
-          solved_plates = sess.plates().keep_only.wcs_solved()
-          plate = solved_plates[0]
+            solved_plates = sess.plates().keep_only.wcs_solved()
+            plate = solved_plates[0]
 
-          relpath = sess.cutout(plate)
-          assert relpath, f"could not get cutout of {plate.plate_id()}"
+            relpath = sess.cutout(plate)
+            assert relpath, f"could not get cutout of {plate.plate_id()}"
 
-          # str() needed here because Astropy does not accept Path objects:
-          hdu_list = fits.open(str(sess.path(relpath))
+            # str() needed here because Astropy does not accept Path objects:
+            hdu_list = fits.open(str(sess.path(relpath))
 
         Notes
         =====
@@ -671,15 +677,28 @@ class Session:
         if self.path(dest_relpath).exists():
             return dest_relpath
 
+        if no_download:
+            return None
+
         # Try to fetch it
 
         self.path("cutouts").mkdir(exist_ok=True)
         t0 = time.time()
         print("- Querying API ...", flush=True)
         center = self.query().pos_as_skycoord()
-        fits_data = _query_cutout(
-            plate["series"], plate["platenum"], plate["mosnum"], center
-        )
+
+        try:
+            fits_data = _query_cutout(
+                plate["series"], plate["platenum"], plate["mosnum"], center
+            )
+        except Exception as e:
+            # Right now, this could happen either because the API failed in a
+            # transient way, or because the plate was not scanned and
+            # WCS-solved. It would be good to be able to distinguish these
+            # cases.
+            self._warn(f"failed to fetch cutout for {plate_id}: {e}")
+            return None
+
         print(f"- Fetched {len(fits_data)} bytes in {time.time()-t0:.0f} seconds")
 
         # Add a bunch of headers using the metadata that we have

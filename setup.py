@@ -54,7 +54,7 @@ setup_args = dict(
         "pillow>=10",
         "pycairo>=1.20",
         "pytz>=2024",
-        "pywwt>=0.23",
+        "pywwt>=0.24.2",
         "requests>=2",
         "scipy>=1.10",
     ],
