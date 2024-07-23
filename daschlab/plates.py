@@ -1120,51 +1120,41 @@ def _postproc_plates(input_cols) -> Plates:
     table = Plates(masked=True)
 
     scannum = np.array(input_cols["scannum"], dtype=np.int8)
-    mask = scannum == -1
+    scanned_mask = scannum == -1
 
-    # create a unitless (non-Quantity) column, unmasked:
-    all_c = lambda c, dt: np.array(input_cols[c], dtype=dt)
-
-    # unitless column, masked:
-    mc = lambda c, dt: np.ma.array(input_cols[c], mask=mask, dtype=dt)
-
-    # Quantity column, unmasked:
-    all_q = lambda c, dt, unit: u.Quantity(np.array(input_cols[c], dtype=dt), unit)
-
-    # Quantity column, masked:
-    mq = lambda c, dt, unit: Masked(
-        u.Quantity(np.array(input_cols[c], dtype=dt), unit), mask
-    )
-
-    # Quantity column, masked, with extra flag values to mask:
-    def extra_mq(c, dt, unit, flagval):
-        a = np.array(input_cols[c], dtype=dt)
-        extra_mask = mask | (a == flagval)
-        return Masked(u.Quantity(a, unit), extra_mask)
+    # unitless column, masked by scanned status:
+    smc = lambda c, dt: np.ma.array(input_cols[c], mask=scanned_mask, dtype=dt)
 
     table["series"] = input_cols["series"]
     table["platenum"] = np.array(input_cols["platenum"], dtype=np.uint32)
-    table["scannum"] = mc("scannum", np.uint8)
-    table["mosnum"] = mc("mosnum", np.uint8)
+    table["scannum"] = smc("scannum", np.uint8)
+    table["mosnum"] = smc("mosnum", np.uint8)
     table["expnum"] = np.array(input_cols["expnum"], dtype=np.uint8)
-    table["solnum"] = mc("solnum", np.uint8)
+    table["solnum"] = smc("solnum", np.uint8)
     table["class"] = input_cols["class"]
-    table["pos"] = SkyCoord(
-        ra=input_cols["ra"] * u.deg,
-        dec=input_cols["dec"] * u.deg,
-        frame="icrs",
-    )
     table["exptime"] = np.array(input_cols["exptime"], dtype=np.float32) * u.minute
     table["obs_date"] = Time(input_cols["jd"], format="jd")
     table["wcssource"] = input_cols["wcssource"]
     table["scan_date"] = _dasch_dates_as_time_array(input_cols["scandate"])
     table["mos_date"] = _dasch_dates_as_time_array(input_cols["mosdate"])
-    table["rotation_deg"] = mc("rotation", np.uint16)
-    table["binflags"] = mc("binflags", np.uint8)
+    table["rotation_deg"] = smc("rotation", np.uint16)
+    table["binflags"] = smc("binflags", np.uint8)
     table["center_distance"] = (
         np.array(input_cols["centerdist"], dtype=np.float32) * u.cm
     )
     table["edge_distance"] = np.array(input_cols["edgedist"], dtype=np.float32) * u.cm
+
+    # Some plates are missing position data, flagged with 999/99's.
+    ra = np.array(input_cols["ra"])
+    dec = np.array(input_cols["dec"])
+    bad_pos = (ra == 999) | (dec == 99)
+    ra[bad_pos] = np.nan
+    dec[bad_pos] = np.nan
+    table["pos"] = SkyCoord(
+        ra=ra * u.deg,
+        dec=dec * u.deg,
+        frame="icrs",
+    )
 
     table.sort(["obs_date"])
 
