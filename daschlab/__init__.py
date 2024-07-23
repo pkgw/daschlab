@@ -504,7 +504,7 @@ class Session:
 
             return self.refcat()[int(src_id)]
 
-        if isinstance(src_ref, int):
+        if isinstance(src_ref, int) or isinstance(src_ref, np.integer):
             return self.refcat()[src_ref]
 
         assert isinstance(src_ref, RefcatSourceRow)
@@ -609,7 +609,7 @@ class Session:
         return merge([self.lightcurve(r) for r in src_refs])
 
     def _resolve_plate_reference(self, plate_ref: "PlateReferenceType") -> PlateRow:
-        if isinstance(plate_ref, int):
+        if isinstance(plate_ref, int) or isinstance(plate_ref, np.integer):
             return self.plates()[plate_ref]
 
         assert isinstance(plate_ref, PlateRow)
