@@ -1936,6 +1936,57 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
 
 def merge(lcs: List[Lightcurve]) -> Lightcurve:
+    """
+    Merge multiple lightcurves under the assumption that they all contain data
+    for the same source.
+
+    Parameters
+    ==========
+    lcs : list of `Lightcurve`
+        The lightcurves to be merged. The provided value must be iterable and
+        indexable.
+
+    Returns
+    =======
+    merged_lc : `Lightcurve`
+        The merged lightcurve.
+
+    Notes
+    =====
+    This function is intended to address the `source splitting`_ issue that can
+    affect DASCH lightcurves. In some cases, detections of the same astronomical
+    source end up split across multiple DASCH lightcurves. When this happens,
+    for each exposure containing a detection of the source, the detection will
+    be assigned to one of several lightcurves quasi-randomly, depending on
+    factors like image defects and the local errors of the WCS solution for the
+    exposure in question.
+
+    .. _source splitting: https://dasch.cfa.harvard.edu/drnext/ki/source-splitting/
+
+    This function accomplishes the merger by unifying all of the input
+    lightcurves as keyed by their exposure identifier. For each exposure where
+    there is only one non-rejected detection among all the inputs, that
+    detection is chosen as the "best" one for that particular exposure. These
+    unique detections are used to calculate a mean magnitude for the source. For
+    cases where more than one input lightcurve has a non-rejected detection for
+    a given exposure, the detection with the magnitude closest to this mean
+    value is selected. Finally, for any exposures where *no* lightcurves have a
+    non-rejected detection, the data from the zero'th input lightcurve are used.
+
+    The returned lightcurve has columns matching those of the zero'th input
+    lightcurve, plus the following:
+
+    - ``source_lc_index`` specifies which input lightcurve a particular row's
+      data came from. This index number is relative to the *lcs* argument, which
+      does not necessarily have to align with reference catalog source numbers.
+    - ``source_lc_row`` specifies which row of the input lightcurve was the
+      source of the output row.
+    - ``merge_n_hits`` specifies how many lightcurves contained a non-rejected
+      detection for this exposure. When things are working well, most rows
+      should have only one hit. You may wish to reject rows where this quantity
+      is larger than one, since they may indicate that the source flux is split
+      between multiple SExtractor detections.
+    """
     lc0 = lcs[0]
     colnames = lc0.colnames
 

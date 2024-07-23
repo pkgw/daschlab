@@ -604,6 +604,35 @@ class Session:
     def merge_lightcurves(
         self, src_refs: Iterable["SourceReferenceType"]
     ) -> Lightcurve:
+        """
+        Obtain a lightcurve merging rows from multiple catalog source
+        lightcurves, under the assumption that they all contain data for the
+        same astronomical source.
+
+        Parameters
+        ==========
+        lcs : list of `int` or `~daschlab.refcat.RefcatSourceRow` or ``"click"``
+            These parameters specify the refcat sources whose lightcurves will
+            be merged together. Individual values are interpreted as in
+            `~Session.lightcurve()`.
+
+        Returns
+        =======
+        merged_lc : `~daschlab.lightcurves.Lightcurve`
+            The merged lightcurve.
+
+        Examples
+        ========
+        Obtain a merged lightcurve from the four refcat sources closest to the
+        session's query position::
+
+            lc = session.merge_lightcurves(range(4))
+
+        Notes
+        =====
+        See the documentation for `daschlab.lightcurves.merge()` for details on
+        the motivation, merge algorithm, and return value of this method.
+        """
         from .lightcurves import merge
 
         return merge([self.lightcurve(r) for r in src_refs])
