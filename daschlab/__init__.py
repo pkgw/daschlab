@@ -601,6 +601,13 @@ class Session:
         )
         return lc
 
+    def merge_lightcurves(
+        self, src_refs: Iterable["SourceReferenceType"]
+    ) -> Lightcurve:
+        from .lightcurves import merge
+
+        return merge([self.lightcurve(r) for r in src_refs])
+
     def _resolve_plate_reference(self, plate_ref: "PlateReferenceType") -> PlateRow:
         if isinstance(plate_ref, int):
             return self.plates()[plate_ref]

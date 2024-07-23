@@ -74,10 +74,10 @@ that you may need to be careful about selection logic. For instance::
 from enum import IntFlag
 from urllib.parse import urlencode
 import sys
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from astropy.coordinates import SkyCoord
-from astropy.table import Row
+from astropy.table import Column, MaskedColumn, Row
 from astropy.time import Time
 from astropy.timeseries import TimeSeries
 from astropy import units as u
@@ -96,6 +96,7 @@ __all__ = [
     "LightcurveSelector",
     "LocalBinRejectFlags",
     "PlateQualityFlags",
+    "merge",
 ]
 
 
@@ -1919,3 +1920,262 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["reject"] = np.zeros(len(table), dtype=np.uint64)
 
     return table
+
+
+# Merging lightcurves
+
+
+def merge(lcs: List[Lightcurve]) -> Lightcurve:
+    lc0 = lcs[0]
+    colnames = lc0.colnames
+
+    # Analyze the first curve to check that we know what to do with all of its columns
+
+    T_SKYCOORD, T_TIME, T_COL, T_MASKCOL, T_MASKQUANT, T_QUANT = range(6)
+    coltypes = np.zeros(len(lc0.colnames), dtype=int)
+
+    for idx, cname in enumerate(colnames):
+        col = lc0[cname]
+
+        if isinstance(col, SkyCoord):
+            coltypes[idx] = T_SKYCOORD
+        elif isinstance(col, Time):
+            coltypes[idx] = T_TIME
+        elif isinstance(col, MaskedColumn):
+            coltypes[idx] = T_MASKCOL
+        elif isinstance(col, Column):
+            coltypes[idx] = T_COL
+        elif isinstance(col, Masked):
+            coltypes[idx] = T_MASKQUANT
+        elif isinstance(col, u.Quantity):
+            coltypes[idx] = T_QUANT
+        else:
+            raise ValueError(
+                f"unrecognized type of input column `{cname}`: {col.__class__.__name__}"
+            )
+
+    # Group detections in each candidate lightcurve by plate. Some rows have
+    # plate_local_id = -1 if the plate is missing from the session's platelist;
+    # we want/need to distinguish these, so we assign them temporary ID's that
+    # are negative.
+
+    dets_by_plate = {}
+    untabulated_plates = {}
+
+    for i_lc, lc in enumerate(lcs):
+        for i_row, row in enumerate(lc):
+            plid = row["plate_local_id"]
+
+            if plid == -1:
+                key = (row["series"], row["platenum"], row["mosnum"])
+                plid = untabulated_plates.get(key)
+                if plid is None:
+                    plid = -(len(untabulated_plates) + 2)
+                    untabulated_plates[key] = plid
+
+            if not row["magcal_magdep"].mask and row["reject"] == 0:
+                dets_by_plate.setdefault(plid, []).append((i_lc, i_row))
+
+    # Go back to lc0 and figure out which rows have no detections in any
+    # lightcurve. We could in principle do this for *all* input lightcurves, but
+    # the marginal gain ought to be tiny at best, unless something very weird is
+    # happening.
+    #
+    # Note, it can happen that we have multiple rows in lc0 with the same
+    # plate_local_id, if they have different solution numbers. I am going to
+    # just fudge this for now, but we should really properly distinguish between
+    # plates and exposures for this analysis.
+
+    no_dets = {}
+
+    for i_row, row in enumerate(lc0):
+        plid = row["plate_local_id"]
+
+        if plid == -1:
+            key = (row["series"], row["platenum"], row["mosnum"])
+            plid = untabulated_plates[key]
+
+        if dets_by_plate.get(plid) is None:
+            no_dets[plid] = i_row
+
+    no_dets = list(no_dets.items())
+
+    # We now know how many output rows we're going to have
+
+    n_det = len(dets_by_plate)
+    n_tot = n_det + len(no_dets)
+
+    # Allocate buffers that will hold the merged table data
+
+    buffers = []
+
+    for cname, ctype in zip(colnames, coltypes):
+        if ctype == T_SKYCOORD:
+            b = (np.zeros(n_tot), np.zeros(n_tot))
+        elif ctype == T_TIME:
+            b = np.zeros(n_tot)
+        elif ctype == T_COL:
+            b = np.zeros(n_tot, dtype=lc0[cname].dtype)
+        elif ctype == T_MASKCOL:
+            b = (np.zeros(n_tot, dtype=lc0[cname].dtype), np.zeros(n_tot, dtype=bool))
+        elif ctype == T_MASKQUANT:
+            b = (np.zeros(n_tot), np.zeros(n_tot, dtype=bool))
+        elif ctype == T_QUANT:
+            b = np.zeros(n_tot)
+
+        buffers.append(b)
+
+    # Calculate a mean magnitude for all unambiguous detections
+
+    mags = np.zeros(n_det)
+    umags = np.zeros(n_det)
+    idx = 0
+
+    for plid, hits in dets_by_plate.items():
+        if len(hits) == 1:
+            i_lc, i_row = hits[0]
+            row = lcs[i_lc][i_row]
+            mag = row["magcal_magdep"].filled(np.nan).value
+            umag = row["magcal_local_rms"].filled(np.nan).value
+
+            if np.isfinite(umag) and umag > 0:
+                mags[idx] = mag
+                umags[idx] = umag
+                idx += 1
+
+    mags = mags[:idx]
+    umags = umags[:idx]
+    weights = umags**-2
+    mean_mag = (mags * weights).sum() / weights.sum()
+    del mags, umags, weights
+
+    # Use the mean mag to decide which point we'll prefer if there are ambiguous
+    # detections. This is a super naive approach and will probably benefit from
+    # refinement.
+
+    det_plids = np.zeros(n_det, dtype=int)
+    det_i_lcs = np.zeros(n_det, dtype=np.uint32)
+    det_i_rows = np.zeros(n_det, dtype=np.uint32)
+    det_n_hits = np.zeros(n_det, dtype=np.uint32)
+
+    for idx, (plid, hits) in enumerate(dets_by_plate.items()):
+        det_plids[idx] = plid
+        n_hits = len(hits)
+
+        i_lc = i_row = best_absdelta = None
+
+        for j_lc, j_row in hits:
+            row = lcs[j_lc][j_row]
+            mag = row["magcal_magdep"]
+            absdelta = np.abs(mag.filled(np.nan).value - mean_mag)
+
+            if best_absdelta is None or absdelta < best_absdelta:
+                best_absdelta = absdelta
+                i_lc = j_lc
+                i_row = j_row
+
+        det_i_lcs[idx] = i_lc
+        det_i_rows[idx] = i_row
+        det_n_hits[idx] = n_hits
+        # TODO: Preserve info about other candidates?
+
+    # Figure out the timestamps of every output row so that we can sort them. If
+    # a row in `origins` is nonnegative, it represents a detection, and indexes
+    # into the `det_*` arrays; if it is negative, it is a non-detection, and it
+    # indexes into no_dets (with an offset).
+
+    timestamps = np.zeros(n_tot)
+    origins = np.zeros(n_tot, dtype=int)
+    alloced_plids = set()
+    idx = 0
+
+    for i in range(n_det):
+        plid = det_plids[i]
+        assert plid not in alloced_plids
+        alloced_plids.add(plid)
+
+        origins[idx] = i
+        timestamps[idx] = lcs[det_i_lcs[i]][det_i_rows[i]]["time"].jd
+        idx += 1
+
+    for i, (plid, i_row) in enumerate(no_dets):
+        assert plid not in alloced_plids
+        alloced_plids.add(plid)
+
+        origins[idx] = -(i + 1)
+        timestamps[idx] = lc0[i_row]["time"].jd
+        idx += 1
+
+    assert idx == n_tot
+    sort_args = np.argsort(timestamps)
+
+    # Now we can populate the column buffers, with appropriate sorting.
+
+    source_id = np.zeros(n_tot, dtype=np.uint64)
+    source_row = np.zeros(n_tot, dtype=np.uint64)
+    n_hits = np.zeros(n_tot, dtype=np.uint8)
+
+    for sort_idx, presort_idx in enumerate(sort_args):
+        origin = origins[presort_idx]
+
+        if origin >= 0:
+            i_lc = det_i_lcs[origin]
+            i_row = det_i_rows[origin]
+            i_n_hits = det_n_hits[origin]
+        else:
+            i_lc = 0
+            i_row = (-origin) - 1
+            i_n_hits = 0
+
+        row = lcs[i_lc][i_row]
+        source_id[sort_idx] = i_lc
+        source_row[sort_idx] = i_row
+        n_hits[sort_idx] = i_n_hits
+
+        for cname, ctype, cbuf in zip(colnames, coltypes, buffers):
+            val = row[cname]
+
+            if ctype == T_SKYCOORD:
+                cbuf[0][sort_idx] = val.ra.deg
+                cbuf[1][sort_idx] = val.dec.deg
+            elif ctype == T_TIME:
+                cbuf[sort_idx] = val.jd
+            elif ctype == T_COL:
+                cbuf[sort_idx] = val
+            elif ctype == T_MASKCOL:
+                if val is np.ma.masked:
+                    cbuf[1][sort_idx] = True
+                else:
+                    cbuf[0][sort_idx] = val
+                    cbuf[1][sort_idx] = False
+            elif ctype == T_MASKQUANT:
+                cbuf[0][sort_idx] = val.filled(0).value
+                cbuf[1][sort_idx] = val.mask
+            elif ctype == T_QUANT:
+                cbuf[sort_idx] = val.value
+
+    # Build the actual table, and we're done.
+
+    result = Lightcurve(masked=True, meta=lc0.meta)
+
+    for cname, ctype, cbuf in zip(colnames, coltypes, buffers):
+        if ctype == T_SKYCOORD:
+            result[cname] = SkyCoord(
+                ra=cbuf[0] * u.deg, dec=cbuf[1] * u.deg, frame="icrs"
+            )
+        elif ctype == T_TIME:
+            result[cname] = Time(cbuf, format="jd")
+        elif ctype == T_COL:
+            result[cname] = cbuf
+        elif ctype == T_MASKCOL:
+            result[cname] = np.ma.array(cbuf[0], mask=cbuf[1])
+        elif ctype == T_MASKQUANT:
+            result[cname] = Masked(u.Quantity(cbuf[0], lc0[cname].unit), cbuf[1])
+        elif ctype == T_QUANT:
+            result[cname] = u.Quantity(cbuf, lc0[cname].unit)
+
+    result["source_lc_index"] = source_id
+    result["source_lc_row"] = source_row
+    result["merge_n_hits"] = n_hits
+    result["local_id"] = np.arange(n_tot)
+    return result
