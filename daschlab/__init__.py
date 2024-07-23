@@ -39,6 +39,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -778,6 +779,38 @@ class Session:
             )
 
         return self._wwt
+
+    def delete_data(self):
+        """
+        Delete all files stored on-disk for this session.
+
+        Notes
+        =====
+        This command will also clear any data tables stored in-memory, forcing
+        them to be re-fetched from the data API as needed. It will recreate the
+        session directory afterwards.
+        """
+
+        self._info(
+            f"Deleting DASCH session data at disk location `{self._root}` and clearing tables"
+        )
+
+        try:
+            shutil.rmtree(self._root)
+        except FileNotFoundError:
+            pass
+
+        try:
+            # Everything else assumes that this directory exists, since we
+            # create it in the constructor; so we have to recreate it.
+            self._root.mkdir(parents=True)
+        except FileExistsError:
+            pass
+
+        self._query = None
+        self._refcat = None
+        self._plates = None
+        self._lc_cache = {}
 
 
 _NAME_CONVERSION_FILTER_RE = re.compile("[^-+_.a-z0-9]")
