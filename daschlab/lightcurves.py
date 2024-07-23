@@ -1781,6 +1781,14 @@ def _postproc_lc(input_cols) -> Lightcurve:
     # unitless column, masked:
     mc = lambda c, dt: np.ma.array(input_cols[c], mask=mask, dtype=dt)
 
+    # unitless column, masked, with extra flag values to mask:
+    def extra_mc(c, dt, *flagvals):
+        a = np.array(input_cols[c], dtype=dt)
+        extra_mask = mask.copy()
+        for flagval in flagvals:
+            extra_mask |= a == flagval
+        return np.ma.array(a, mask=extra_mask)
+
     # Quantity column, unmasked:
     all_q = lambda c, dt, unit: u.Quantity(np.array(input_cols[c], dtype=dt), unit)
 
@@ -1790,9 +1798,11 @@ def _postproc_lc(input_cols) -> Lightcurve:
     )
 
     # Quantity column, masked, with extra flag values to mask:
-    def extra_mq(c, dt, unit, flagval):
+    def extra_mq(c, dt, unit, *flagvals):
         a = np.array(input_cols[c], dtype=dt)
-        extra_mask = mask | (a == flagval)
+        extra_mask = mask.copy()
+        for flagval in flagvals:
+            extra_mask |= a == flagval
         return Masked(u.Quantity(a, unit), extra_mask)
 
     # Columns are displayed in the order that they're added to the table,
@@ -1841,7 +1851,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     # Photometry: calibrated
 
     table["magcal_iso"] = mq("magcal_iso", np.float32, u.mag)
-    table["magcal_iso_rms"] = mq("magcal_iso_rms", np.float32, u.mag)
+    table["magcal_iso_rms"] = extra_mq("magcal_iso_rms", np.float32, u.mag, 99.0)
     table["magcal_local"] = mq("magcal_local", np.float32, u.mag)
     table["magcal_local_rms"] = extra_mq("magcal_local_rms", np.float32, u.mag, 99.0)
     table["magcal_local_error"] = extra_mq(
@@ -1853,13 +1863,13 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["drad_rms2"] = extra_mq("dradRMS2", np.float32, u.arcsec, 99.0)
     table["extinction"] = mq("extinction", np.float32, u.mag)
     table["magcor_local"] = extra_mq("magcor_local", np.float32, u.mag, 0.0)
-    table["blended_mag"] = extra_mq("Blendedmag", np.float32, u.mag, 0.0)
+    table["blended_mag"] = extra_mq("Blendedmag", np.float32, u.mag, 0.0, 99.0)
     table["a2flags"] = mc("A2FLAGS", np.uint32)
     table["b2flags"] = mc("B2FLAGS", np.uint32)
     table["npoints_local"] = mc("npoints_local", np.uint32)
     table["local_bin_index"] = mc("local_bin_index", np.uint16)
     table["spatial_bin"] = mc("spatial_bin", np.uint16)
-    table["magdep_bin"] = mc("magdep_bin", np.uint16)
+    table["magdep_bin"] = extra_mc("magdep_bin", np.int16, -1)
 
     # Photometry: image-level
 
