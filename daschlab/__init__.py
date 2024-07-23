@@ -39,6 +39,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -503,7 +504,7 @@ class Session:
 
             return self.refcat()[int(src_id)]
 
-        if isinstance(src_ref, int):
+        if isinstance(src_ref, int) or isinstance(src_ref, np.integer):
             return self.refcat()[src_ref]
 
         assert isinstance(src_ref, RefcatSourceRow)
@@ -600,8 +601,44 @@ class Session:
         )
         return lc
 
+    def merge_lightcurves(
+        self, src_refs: Iterable["SourceReferenceType"]
+    ) -> Lightcurve:
+        """
+        Obtain a lightcurve merging rows from multiple catalog source
+        lightcurves, under the assumption that they all contain data for the
+        same astronomical source.
+
+        Parameters
+        ==========
+        lcs : list of `int` or `~daschlab.refcat.RefcatSourceRow` or ``"click"``
+            These parameters specify the refcat sources whose lightcurves will
+            be merged together. Individual values are interpreted as in
+            `~Session.lightcurve()`.
+
+        Returns
+        =======
+        merged_lc : `~daschlab.lightcurves.Lightcurve`
+            The merged lightcurve.
+
+        Examples
+        ========
+        Obtain a merged lightcurve from the four refcat sources closest to the
+        session's query position::
+
+            lc = session.merge_lightcurves(range(4))
+
+        Notes
+        =====
+        See the documentation for `daschlab.lightcurves.merge()` for details on
+        the motivation, merge algorithm, and return value of this method.
+        """
+        from .lightcurves import merge
+
+        return merge([self.lightcurve(r) for r in src_refs])
+
     def _resolve_plate_reference(self, plate_ref: "PlateReferenceType") -> PlateRow:
-        if isinstance(plate_ref, int):
+        if isinstance(plate_ref, int) or isinstance(plate_ref, np.integer):
             return self.plates()[plate_ref]
 
         assert isinstance(plate_ref, PlateRow)
@@ -778,6 +815,38 @@ class Session:
             )
 
         return self._wwt
+
+    def delete_data(self):
+        """
+        Delete all files stored on-disk for this session.
+
+        Notes
+        =====
+        This command will also clear any data tables stored in-memory, forcing
+        them to be re-fetched from the data API as needed. It will recreate the
+        session directory afterwards.
+        """
+
+        self._info(
+            f"Deleting DASCH session data at disk location `{self._root}` and clearing tables"
+        )
+
+        try:
+            shutil.rmtree(self._root)
+        except FileNotFoundError:
+            pass
+
+        try:
+            # Everything else assumes that this directory exists, since we
+            # create it in the constructor; so we have to recreate it.
+            self._root.mkdir(parents=True)
+        except FileExistsError:
+            pass
+
+        self._query = None
+        self._refcat = None
+        self._plates = None
+        self._lc_cache = {}
 
 
 _NAME_CONVERSION_FILTER_RE = re.compile("[^-+_.a-z0-9]")

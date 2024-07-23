@@ -12,7 +12,9 @@ Session
 
       ~Session.connect_to_wwt
       ~Session.cutout
+      ~Session.delete_data
       ~Session.lightcurve
+      ~Session.merge_lightcurves
       ~Session.path
       ~Session.plates
       ~Session.query
@@ -25,7 +27,9 @@ Session
 
    .. automethod:: connect_to_wwt
    .. automethod:: cutout
+   .. automethod:: delete_data
    .. automethod:: lightcurve
+   .. automethod:: merge_lightcurves
    .. automethod:: path
    .. automethod:: plates
    .. automethod:: query
