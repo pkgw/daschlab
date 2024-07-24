@@ -1127,17 +1127,17 @@ def _postproc_plates(input_cols) -> Plates:
 
     table["series"] = input_cols["series"]
     table["platenum"] = np.array(input_cols["platenum"], dtype=np.uint32)
-    table["scannum"] = smc("scannum", np.uint8)
-    table["mosnum"] = smc("mosnum", np.uint8)
-    table["expnum"] = np.array(input_cols["expnum"], dtype=np.uint8)
-    table["solnum"] = smc("solnum", np.uint8)
+    table["scannum"] = smc("scannum", np.int8)
+    table["mosnum"] = smc("mosnum", np.int8)
+    table["expnum"] = np.array(input_cols["expnum"], dtype=np.int8)
+    table["solnum"] = smc("solnum", np.int8)
     table["class"] = input_cols["class"]
     table["exptime"] = np.array(input_cols["exptime"], dtype=np.float32) * u.minute
     table["obs_date"] = Time(input_cols["jd"], format="jd")
     table["wcssource"] = input_cols["wcssource"]
     table["scan_date"] = _dasch_dates_as_time_array(input_cols["scandate"])
     table["mos_date"] = _dasch_dates_as_time_array(input_cols["mosdate"])
-    table["rotation_deg"] = smc("rotation", np.uint16)
+    table["rotation_deg"] = smc("rotation", np.int16)
     table["binflags"] = smc("binflags", np.uint8)
     table["center_distance"] = (
         np.array(input_cols["centerdist"], dtype=np.float32) * u.cm

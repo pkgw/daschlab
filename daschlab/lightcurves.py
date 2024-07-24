@@ -1841,7 +1841,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table["platenum"] = all_c("plateNumber", np.uint32)
     table["mosnum"] = all_c("mosaicNumber", np.uint8)
     table["solnum"] = all_c("solutionNumber", np.uint8)
-    table["expnum"] = all_c("exposureNumber", np.uint8)
+    table["expnum"] = all_c("exposureNumber", np.int8)
 
     # Astrometry: image-level
 
@@ -1921,7 +1921,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     # DASCH supporting info
 
     table["dasch_photdb_version_id"] = all_c("versionId", np.uint16)
-    table["dasch_plate_version_id"] = all_c("plateVersionId", np.uint8)
+    table["dasch_plate_version_id"] = all_c("plateVersionId", np.uint16)
     table["dasch_mask_index"] = all_c("maskIndex", np.uint8)
 
     table.sort(["time"])
