@@ -18,6 +18,9 @@ import requests
 
 _API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/cutout.php"
 
+# TODO: this needs to support multiple solutions!! The API isn't aware of
+# multiple exposures at all, right now, so there's nothing this code can do.
+
 
 def _query_cutout(
     series: str,
