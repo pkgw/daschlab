@@ -1,3 +1,3 @@
-.. automodapi:: daschlab.plates
+.. automodapi:: daschlab.exposures
    :no-inheritance-diagram:
    :no-inherited-members:

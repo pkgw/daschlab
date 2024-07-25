@@ -54,7 +54,7 @@ from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
 from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
-from .plates import Plates, PlateRow, _query_plates
+from .exposures import Exposures, ExposureRow, _query_exposures
 from .lightcurves import Lightcurve, _query_lc
 from .cutouts import _query_cutout
 
@@ -143,10 +143,10 @@ class Session:
 
     - `~Session.refcat()` to access a table of DASCH catalog sources near
       your target
-    - `~Session.plates()` to access a table of DASCH plates overlapping
+    - `~Session.exposures()` to access a table of exposures overlapping
       your target
     - `~Session.lightcurve()` to access lightcurves for the catalog sources
-    - `~Session.cutout()` to download plate cutout images centered on
+    - `~Session.cutout()` to download exposure cutout images centered on
       your target
     """
 
@@ -155,18 +155,18 @@ class Session:
     _internal_simg: str = ""
     _query: Optional[SessionQuery] = None
     _refcat: Optional[RefcatSources] = None
-    _plates: Optional[Plates] = None
+    _exposures: Optional[Exposures] = None
     _wwt: Optional[WWTJupyterWidget] = None
     _refcat_table_layer: Optional["pywwt.layers.TableLayer"] = None
     _lc_cache: Dict[str, Lightcurve] = None
-    _plate_image_layer_cache: dict = None
+    _exposure_image_layer_cache: dict = None
 
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
         self._root = pathlib.Path(root)
         self._interactive = interactive
         self._internal_simg = _internal_simg
         self._lc_cache = {}
-        self._plate_image_layer_cache = {}
+        self._exposure_image_layer_cache = {}
 
         try:
             self._root.mkdir(parents=True)
@@ -213,17 +213,17 @@ class Session:
             else:
                 self._info("- Refcat: present but empty")
 
-        # Recover plates?
+        # Recover exposures?
 
         try:
-            self._plates = Plates.read(
-                str(self.path("plates.ecsv")), format="ascii.ecsv"
+            self._exposures = Exposures.read(
+                str(self.path("exposures.ecsv")), format="ascii.ecsv"
             )
-            self._plates.meta["daschlab_sess_key"] = str(self._root)
+            self._exposures.meta["daschlab_sess_key"] = str(self._root)
         except FileNotFoundError:
-            self._plates = None
+            self._exposures = None
         else:
-            self._info(f"- Plates: {len(self._plates)} relevant plates")
+            self._info(f"- Exposures: {len(self._exposures)} relevant exposures")
 
     def _my_var_name(self) -> str:
         for name, value in globals().items():
@@ -443,13 +443,13 @@ class Session:
             )
         return self._refcat
 
-    def plates(self) -> Plates:
+    def exposures(self) -> Exposures:
         """
-        Obtain the table of plates overlapping the session target area.
+        Obtain the table of exposures overlapping the session target area.
 
         Returns
         =======
-        A `daschlab.plates.Plates` instance.
+        A `daschlab.exposures.Exposures` instance.
 
         Notes
         =====
@@ -457,35 +457,35 @@ class Session:
         before calling this method.
 
         The first time you call this method for a given session, it will perform
-        a DASCH API query to fetch information from the plate database, saving
-        the resulting information in a file named ``plates.ecsv``. Subsequent
-        calls (i.e., ones made with the ``plates.ecsv`` file already existing)
+        a DASCH API query to fetch information from the exposure database, saving
+        the resulting information in a file named ``exposures.ecsv``. Subsequent
+        calls (i.e., ones made with the ``exposures.ecsv`` file already existing)
         will merely check for consistency and load the saved file.
         """
 
-        if self._plates is not None:
-            return self._plates
+        if self._exposures is not None:
+            return self._exposures
 
         # First-time invocation; query the database
 
         if self._query is None:
             raise InteractiveError(
-                f"cannot retrieve plates before setting target - run something like `{self._my_var_name()}.select_target(name='HD 209458')`"
+                f"cannot retrieve exposures before setting target - run something like `{self._my_var_name()}.select_target(name='HD 209458')`"
             )
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        self._plates = _query_plates(self._query.pos_as_skycoord(), PLATES_RADIUS)
-        self._plates.meta["daschlab_sess_key"] = str(self._root)
+        self._exposures = _query_exposures(self._query.pos_as_skycoord(), PLATES_RADIUS)
+        self._exposures.meta["daschlab_sess_key"] = str(self._root)
 
-        with self._save_atomic("plates.ecsv") as f_new:
-            self._plates.write(f_new.name, format="ascii.ecsv", overwrite=True)
+        with self._save_atomic("exposures.ecsv") as f_new:
+            self._exposures.write(f_new.name, format="ascii.ecsv", overwrite=True)
 
         elapsed = time.time() - t0
         self._info(
-            f"- Retrieved {len(self._plates)} relevant plates in {elapsed:.0f} seconds and saved as `plates.ecsv`"
+            f"- Retrieved {len(self._exposures)} relevant exposures in {elapsed:.0f} seconds and saved as `exposures.ecsv`"
         )
-        return self._plates
+        return self._exposures
 
     def _resolve_src_reference(self, src_ref: "SourceReferenceType") -> RefcatSourceRow:
         if isinstance(src_ref, str) and src_ref == "click":
@@ -551,7 +551,7 @@ class Session:
         src = self._resolve_src_reference(src_ref)
 
         # We're going to need this later; emit the output now.
-        plates = self.plates()
+        exposures = self.exposures()
 
         name = src["ref_text"]
         lc = self._lc_cache.get(name)
@@ -575,19 +575,22 @@ class Session:
         print("- Querying API ...", flush=True)
         lc = _query_lc(src["refcat"], name, src["gsc_bin_index"])
 
-        # Cross-match with the plates
+        # Cross-match with the exposures. We can assume that these are ones with
+        # imaging, since those are the only ones that can yield photometry.
 
-        plate_lookup = {}
+        exp_lookup = {}
 
-        for p in plates:
-            if p["mosnum"] is not np.ma.masked:
-                plate_lookup[(p["series"], p["platenum"], p["mosnum"])] = p["local_id"]
+        for exp in exposures:
+            if exp["mosnum"] is not np.ma.masked:
+                exp_lookup[
+                    (exp["series"], exp["platenum"], exp["mosnum"], exp["solnum"])
+                ] = exp["local_id"]
 
-        lc["plate_local_id"] = -1
+        lc["exp_local_id"] = -1
 
         for p in lc:
-            p["plate_local_id"] = plate_lookup.get(
-                (p["series"], p["platenum"], p["mosnum"]), -1
+            p["exp_local_id"] = exp_lookup.get(
+                (p["series"], p["platenum"], p["mosnum"], p["solnum"]), -1
             )
 
         # All done
@@ -637,27 +640,29 @@ class Session:
 
         return merge([self.lightcurve(r) for r in src_refs])
 
-    def _resolve_plate_reference(self, plate_ref: "PlateReferenceType") -> PlateRow:
-        if isinstance(plate_ref, int) or isinstance(plate_ref, np.integer):
-            return self.plates()[plate_ref]
+    def _resolve_exposure_reference(
+        self, exp_ref: "ExposureReferenceType"
+    ) -> ExposureRow:
+        if isinstance(exp_ref, int) or isinstance(exp_ref, np.integer):
+            return self.exposures()[exp_ref]
 
-        assert isinstance(plate_ref, PlateRow)
-        return plate_ref
+        assert isinstance(exp_ref, ExposureRow)
+        return exp_ref
 
     def cutout(
-        self, plate_ref: "PlateReferenceType", no_download: bool = False
+        self, exp_ref: "ExposureReferenceType", no_download: bool = False
     ) -> Optional[str]:
         """
-        Obtain a FITS cutout for the specified plate.
+        Obtain a FITS cutout for the specified exposure.
 
         Parameters
         ==========
-        plate_ref : `int` or `~daschlab.plates.PlateRow`
+        exp_ref : `int` or `~daschlab.exposures.ExposureRow`
             If this argument is an integer, it is interpreted as the "local ID"
-            of a row in the plates table.
+            of a row in the exposures table.
 
-            If this argument is an instance of `~daschlab.plates.PlateRow`, the
-            cutout for the specified plate is obtained.
+            If this argument is an instance of `~daschlab.exposures.ExposureRow`, the
+            cutout for the specified exposure is obtained.
 
         no_download : optional `bool`, default False
             If set to true, no attempt will be made to download the requested
@@ -670,7 +675,7 @@ class Session:
             If the former, the cutout was successfully fetched; the value is a
             path to a local FITS file containing the cutout data, *relative to the
             session root*. If the latter, a cutout could not be obtained. This
-            could happen if the plate has not been scanned, among other reasons.
+            could happen if the exposure has not been scanned, among other reasons.
 
         Examples
         ========
@@ -679,18 +684,18 @@ class Session:
 
             from astropy.io import fits
 
-            solved_plates = sess.plates().keep_only.wcs_solved()
-            plate = solved_plates[0]
+            imaged_exposures = sess.exposures().keep_only.has_imaging()
+            exp = imaged_exposures[0]
 
-            relpath = sess.cutout(plate)
-            assert relpath, f"could not get cutout of {plate.plate_id()}"
+            relpath = sess.cutout(exp)
+            assert relpath, f"could not get cutout of {exp.exp_id()}"
 
             # str() needed here because Astropy does not accept Path objects:
             hdu_list = fits.open(str(sess.path(relpath))
 
         Notes
         =====
-        You must call `~Session.select_target()` and `~Session.plates()` before
+        You must call `~Session.select_target()` and `~Session.exposures()` before
         calling this method.
 
         The first time you call this method for a given session, it will perform
@@ -701,15 +706,20 @@ class Session:
 
         See Also
         ========
-        daschlab.plates.Plates.show : to show a cutout in the WWT view
+        daschlab.exposures.Exposures.show : to show a cutout in the WWT view
         """
         from astropy.io import fits
 
-        plate = self._resolve_plate_reference(plate_ref)
+        exp = self._resolve_exposure_reference(exp_ref)
+        exp_id = exp.exp_id()
+        if not exp.has_imaging():
+            self._warn(
+                f"cannot get a cutout for exposure {exp_id}: it does not have an imaging solution"
+            )
+            return None
 
-        local_id = plate["local_id"]
-        plate_id = f"{plate['series']}{plate['platenum']:05d}_{plate['mosnum']:02d}"
-        dest_relpath = f"cutouts/{local_id:05d}_{plate_id}.fits"
+        local_id = exp["local_id"]
+        dest_relpath = f"cutouts/{local_id:05d}_{exp_id}.fits"
 
         if self.path(dest_relpath).exists():
             return dest_relpath
@@ -725,15 +735,15 @@ class Session:
         center = self.query().pos_as_skycoord()
 
         try:
+            # XXXX WE MUST USE SOLNUM
             fits_data = _query_cutout(
-                plate["series"], plate["platenum"], plate["mosnum"], center
+                exp["series"], exp["platenum"], exp["mosnum"], center
             )
         except Exception as e:
-            # Right now, this could happen either because the API failed in a
-            # transient way, or because the plate was not scanned and
-            # WCS-solved. It would be good to be able to distinguish these
-            # cases.
-            self._warn(f"failed to fetch cutout for {plate_id}: {e}")
+            # Now that we are better about distinguishing between exposures that
+            # do and don't have imaging, this should probably be upgraded to an
+            # exception again.
+            self._warn(f"failed to fetch cutout for {exp_id}: {e}")
             return None
 
         print(f"- Fetched {len(fits_data)} bytes in {time.time()-t0:.0f} seconds")
@@ -748,20 +758,20 @@ class Session:
             with fits.open(fits_data) as hdul:
                 h = hdul[0].header
 
-                h["D_SCNNUM"] = plate["scannum"]
-                h["D_EXPNUM"] = plate["expnum"]
-                h["D_SOLNUM"] = plate["solnum"]
+                h["D_SCNNUM"] = exp["scannum"]
+                h["D_EXPNUM"] = exp["expnum"]
+                h["D_SOLNUM"] = exp["solnum"]
                 # the 'class' column is handled as a masked array and when we convert it
                 # to a row, the masked value seems to become a float64?
-                h["D_PCLASS"] = "" if plate["class"] is np.ma.masked else plate["class"]
-                h["D_ROTFLG"] = plate["rotation_deg"]
-                h["EXPTIME"] = plate["exptime"] * 60
-                h["DATE-OBS"] = plate["obs_date"].fits
-                h["MJD-OBS"] = plate["obs_date"].mjd
-                h["DATE-SCN"] = plate["scan_date"].unmasked.fits
-                h["MJD-SCN"] = plate["scan_date"].unmasked.mjd
-                h["DATE-MOS"] = plate["mos_date"].unmasked.fits
-                h["MJD-MOS"] = plate["mos_date"].unmasked.mjd
+                h["D_PCLASS"] = "" if exp["class"] is np.ma.masked else exp["class"]
+                h["D_ROTFLG"] = exp["rotation_deg"]
+                h["EXPTIME"] = exp["exptime"] * 60
+                h["DATE-OBS"] = exp["obs_date"].fits
+                h["MJD-OBS"] = exp["obs_date"].mjd
+                h["DATE-SCN"] = exp["scan_date"].unmasked.fits
+                h["MJD-SCN"] = exp["scan_date"].unmasked.mjd
+                h["DATE-MOS"] = exp["mos_date"].unmasked.fits
+                h["MJD-MOS"] = exp["mos_date"].unmasked.mjd
 
                 with self._save_atomic(dest_relpath) as f_new:
                     hdul.writeto(f_new.name, overwrite=True)
@@ -845,7 +855,7 @@ class Session:
 
         self._query = None
         self._refcat = None
-        self._plates = None
+        self._exposures = None
         self._lc_cache = {}
 
 
@@ -966,4 +976,4 @@ def _lookup_session(root: str) -> Session:
 # Typing stuff
 
 from .refcat import SourceReferenceType
-from .plates import PlateReferenceType
+from .exposures import ExposureReferenceType

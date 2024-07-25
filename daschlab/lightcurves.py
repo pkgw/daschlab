@@ -270,9 +270,9 @@ _AFLAG_DESCRIPTIONS = [
     "Object brightness is too close to the local limiting magnitude",
     "Object is in radial bin 9 (close to the plate edge)",
     "Object's spatial bin has unmeasured `drad`",
-    "(bit 17 unused)",
-    "(bit 18 unused)",
-    "(bit 19 unused)",
+    "(bit 17 composite)",
+    "(bit 18 composite)",
+    "(bit 19 composite)",
     "Magnitude of the catalog source is uncertain/variable",
     '"Case B" blend - multiple catalog entries for one imaged star',
     '"Case C" blend - mutiple imaged stars for one catalog entry',
@@ -285,6 +285,17 @@ _AFLAG_DESCRIPTIONS = [
     "Smoothing correction is suspiciously large",
     "Object is too bright for accurate calibration",
     "Low altitude - object is within 23.5 deg of the horizon",
+]
+
+_AFLAG_COMPOSITE_FIELDS = [
+    "(no composite flags)",
+    "Galaxy not in refcat",
+    "Blend not in refcat",
+    "Object is non-star",
+    "Unclassified object type, not in refcat",
+    "Object is defect",
+    "(composite value 6 unused)",
+    "Duplicate star",
 ]
 
 
@@ -514,7 +525,7 @@ _PLATE_QUALITY_FLAG_DESCRIPTIONS = [
 ]
 
 
-def _report_flags(desc, observed, enumtype, descriptions):
+def _report_flags(desc, observed, enumtype, descriptions, ignore_leftover_bits=0):
     print(f"{desc}: 0x{observed:08X}")
 
     if not observed:
@@ -528,7 +539,7 @@ def _report_flags(desc, observed, enumtype, descriptions):
             print(f"  bit {bit:2d}: {iflag.name:32} - {descriptions[bit - 1]}")
             accum |= iflag.value
 
-    if accum != observed:
+    if (accum | ignore_leftover_bits) != (observed | ignore_leftover_bits):
         print(f"  !! unexpected leftover bits: {observed & ~accum:08X}")
 
 
@@ -552,7 +563,20 @@ class LightcurvePoint(Row):
         `AFlags`, `BFlags`, `LocalBinRejectFlags`, and `PlateQualityFlags`.
         """
 
-        _report_flags("AFLAGS", self["aflags"], AFlags, _AFLAG_DESCRIPTIONS)
+        _report_flags(
+            "AFLAGS",
+            self["aflags"],
+            AFlags,
+            _AFLAG_DESCRIPTIONS,
+            ignore_leftover_bits=0x70000,
+        )
+
+        c = (self["aflags"] >> 16) & 0x7
+        if c:
+            print(
+                f"  bits 16-18: (composite flags)            - {_AFLAG_COMPOSITE_FIELDS[c]}"
+            )
+
         _report_flags("BFLAGS", self["bflags"], BFlags, _BFLAG_DESCRIPTIONS)
         _report_flags(
             "LocalBinReject",
@@ -1542,7 +1566,7 @@ class Lightcurve(TimeSeries):
                 ("Epoch", "@year{0000.0000}"),
                 (
                     "Plate",
-                    "@series@platenum / mosnum @mosnum / plLocID @plate_local_id",
+                    "@series@platenum / expLocID @exp_local_id",
                 ),
             ],
         )
@@ -1618,7 +1642,7 @@ class Lightcurve(TimeSeries):
                 ("LocalID", "@local_id"),
                 ("Mag.", "@magcal_magdep"),
                 ("Epoch", "@year"),
-                ("Plate", "@series@platenum mosnum @mosnum pl_loc_id @plate_local_id"),
+                ("Plate", "@series@platenum expLocID @exp_local_id"),
             ],
         )
 
@@ -1696,7 +1720,7 @@ class Lightcurve(TimeSeries):
             "magcal_local",
             "magcal_magdep_rms",
             "magdep_bin",
-            "plate_local_id",
+            "exp_local_id",
             "series_id",
             "spatial_bin",
             "sxt_iso0",
@@ -2015,55 +2039,48 @@ def merge(lcs: List[Lightcurve]) -> Lightcurve:
                 f"unrecognized type of input column `{cname}`: {col.__class__.__name__}"
             )
 
-    # Group detections in each candidate lightcurve by plate. Some rows have
-    # plate_local_id = -1 if the plate is missing from the session's platelist;
-    # we want/need to distinguish these, so we assign them temporary ID's that
-    # are negative.
+    # Group detections in each candidate lightcurve by exposure. Some rows have
+    # exp_local_id = -1 if the exposure is missing from the session's exposure
+    # list; we want/need to distinguish these, so we assign them temporary ID's
+    # that are negative.
 
-    dets_by_plate = {}
-    untabulated_plates = {}
+    dets_by_exp = {}
+    untabulated_exps = {}
 
     for i_lc, lc in enumerate(lcs):
         for i_row, row in enumerate(lc):
-            plid = row["plate_local_id"]
+            expid = row["exp_local_id"]
 
-            if plid == -1:
-                key = (row["series"], row["platenum"], row["mosnum"])
-                plid = untabulated_plates.get(key)
-                if plid is None:
-                    plid = -(len(untabulated_plates) + 2)
-                    untabulated_plates[key] = plid
+            if expid == -1:
+                key = (row["series"], row["platenum"], row["mosnum"], row["solnum"])
+                expid = untabulated_exps.get(key)
+                if expid is None:
+                    expid = -(len(untabulated_exps) + 2)
+                    untabulated_exps[key] = expid
 
             if not row["magcal_magdep"].mask and row["reject"] == 0:
-                dets_by_plate.setdefault(plid, []).append((i_lc, i_row))
+                dets_by_exp.setdefault(expid, []).append((i_lc, i_row))
 
     # Go back to lc0 and figure out which rows have no detections in any
     # lightcurve. We could in principle do this for *all* input lightcurves, but
     # the marginal gain ought to be tiny at best, unless something very weird is
     # happening.
-    #
-    # Note, it can happen that we have multiple rows in lc0 with the same
-    # plate_local_id, if they have different solution numbers. I am going to
-    # just fudge this for now, but we should really properly distinguish between
-    # plates and exposures for this analysis.
 
-    no_dets = {}
+    no_dets = []
 
     for i_row, row in enumerate(lc0):
-        plid = row["plate_local_id"]
+        expid = row["exp_local_id"]
 
-        if plid == -1:
-            key = (row["series"], row["platenum"], row["mosnum"])
-            plid = untabulated_plates[key]
+        if expid == -1:
+            key = (row["series"], row["platenum"], row["mosnum"], row["solnum"])
+            expid = untabulated_exps[key]
 
-        if dets_by_plate.get(plid) is None:
-            no_dets[plid] = i_row
-
-    no_dets = list(no_dets.items())
+        if dets_by_exp.get(expid) is None:
+            no_dets.append((expid, i_row))
 
     # We now know how many output rows we're going to have
 
-    n_det = len(dets_by_plate)
+    n_det = len(dets_by_exp)
     n_tot = n_det + len(no_dets)
 
     # Allocate buffers that will hold the merged table data
@@ -2092,7 +2109,7 @@ def merge(lcs: List[Lightcurve]) -> Lightcurve:
     umags = np.zeros(n_det)
     idx = 0
 
-    for plid, hits in dets_by_plate.items():
+    for expid, hits in dets_by_exp.items():
         if len(hits) == 1:
             i_lc, i_row = hits[0]
             row = lcs[i_lc][i_row]
@@ -2114,13 +2131,13 @@ def merge(lcs: List[Lightcurve]) -> Lightcurve:
     # detections. This is a super naive approach and will probably benefit from
     # refinement.
 
-    det_plids = np.zeros(n_det, dtype=int)
+    det_expids = np.zeros(n_det, dtype=int)
     det_i_lcs = np.zeros(n_det, dtype=np.uint32)
     det_i_rows = np.zeros(n_det, dtype=np.uint32)
     det_n_hits = np.zeros(n_det, dtype=np.uint32)
 
-    for idx, (plid, hits) in enumerate(dets_by_plate.items()):
-        det_plids[idx] = plid
+    for idx, (expid, hits) in enumerate(dets_by_exp.items()):
+        det_expids[idx] = expid
         n_hits = len(hits)
 
         i_lc = i_row = best_absdelta = None
@@ -2147,21 +2164,21 @@ def merge(lcs: List[Lightcurve]) -> Lightcurve:
 
     timestamps = np.zeros(n_tot)
     origins = np.zeros(n_tot, dtype=int)
-    alloced_plids = set()
+    alloced_expids = set()
     idx = 0
 
     for i in range(n_det):
-        plid = det_plids[i]
-        assert plid not in alloced_plids
-        alloced_plids.add(plid)
+        expid = det_expids[i]
+        assert expid not in alloced_expids
+        alloced_expids.add(expid)
 
         origins[idx] = i
         timestamps[idx] = lcs[det_i_lcs[i]][det_i_rows[i]]["time"].jd
         idx += 1
 
-    for i, (plid, i_row) in enumerate(no_dets):
-        assert plid not in alloced_plids
-        alloced_plids.add(plid)
+    for i, (expid, i_row) in enumerate(no_dets):
+        assert expid not in alloced_expids
+        alloced_expids.add(expid)
 
         origins[idx] = -(i + 1)
         timestamps[idx] = lc0[i_row]["time"].jd

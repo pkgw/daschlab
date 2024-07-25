@@ -2,16 +2,34 @@
 # Licensed under the MIT License
 
 """
-Tables of information about photographic plates.
+Tables of information about exposures on photographic plates.
 
-The main class provided by this module is `Plates`, instances of which can be
-obtained with the `daschlab.Session.plates()` method.
+The main class provided by this module is `Exposures`, instances of which can be
+obtained with the `daschlab.Session.exposures()` method.
 
-The nomenclature in this module somewhat glosses over the distinction between
-physical plates and “mosaics”, which is the DASCH terminology for a single large
-image made from a scan of a plate. Multiple mosaics of a single plate can, in
-principle, exist. To a good approximation, however, there is a 1:1 relationship
-between the two.
+Every photographic plate worth scanning was exposed at least once, but some were
+exposed multiple times. This means that on a given plate image, the same pixel
+may correspond to multiple different RA/Dec values, and a single RA/Dec may
+occur at several different pixel locations, if the multiple exposures overlapped
+each other.
+
+For each plate that was successfully scanned, there is at least one “mosaic”,
+which is the DASCH terminology for a single large FITS image made from a plate
+scan. There can in principle be multiple mosaics per plate. Each mosaic is
+analyzed to search for as many WCS solutions as can be found.
+
+Ideally, each WCS solution corresponds to an exposure of the plate. However, we
+also have external information about what plates have exposures, based on
+historical observing logbooks. WCS solutions may or may not be identifiable with
+known exposures. Sometimes there are fewer WCS solutions than logged exposures;
+sometimes there are more. Furthermore, the logbooks may provide information
+about exposures on plates that haven't been scanned at all.
+
+An exposure associated with a WCS solution to a mosaic is said to "have imaging"
+data available. This module deals with both exposures that have imaging, and
+those that do not. Some exposures lack imaging because the associated plate was
+not scanned at all; some lack imaging because it was not possible to associate
+that exposure with a WCS solution.
 """
 
 from datetime import datetime
@@ -28,7 +46,6 @@ from astropy.io import fits
 from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
-from astropy.utils.masked import Masked
 from astropy.wcs import WCS
 from bokeh.plotting import figure, show
 import cairo
@@ -40,10 +57,10 @@ import requests
 
 from .series import SERIES, SeriesKind
 
-__all__ = ["Plates", "PlateReferenceType", "PlateRow", "PlateSelector"]
+__all__ = ["Exposures", "ExposureReferenceType", "ExposureRow", "ExposureSelector"]
 
 
-_API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/queryplates.php"
+_API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/queryplates.php"  # TODO: rename
 
 
 def _daschtime_to_isot(t: str) -> str:
@@ -90,18 +107,18 @@ _COLTYPES = {
 }
 
 
-class PlateRow(Row):
+class ExposureRow(Row):
     """
-    A single row from a `Plates` table.
+    A single row from an `Exposures` table.
 
-    You do not need to construct these objects manually. Indexing a `Plates`
+    You do not need to construct these objects manually. Indexing an `Exposures`
     table with a single integer will yield an instance of this class, which is a
     subclass of `astropy.table.Row`.
     """
 
     def show(self) -> ImageLayer:
         """
-        Display the cutout of this plate in the WWT view.
+        Display the cutout of this exposure in the WWT view.
 
         Returns
         =======
@@ -116,31 +133,62 @@ class PlateRow(Row):
         `daschlab.Session.connect_to_wwt()`. If needed, this method will execute
         an API call and download the cutout to be displayed, which may be slow.
         """
+        if not self.has_imaging():
+            raise Exception("Cannot show an exposure that has no associated imaging")
         return self._table.show(self)
 
-    def plate_id(self) -> str:
+    def has_imaging(self) -> bool:
         """
-        Get a textual identifier for this plate.
+        Test whether this exposure has associated imaging data or not.
+
+        Returns
+        =======
+        `bool`
+            True if the exposure has imaging.
+
+        Notes
+        =====
+        Exposures do not have imaging when they are obtained from logbook data
+        but the associated plate has not been scanned. Or, the associated plate
+        may have been scanned, but the WCS analysis of the imagery was unable to
+        determine a solution matching the information associated with this
+        exposure.
+        """
+        return self["wcssource"] == "imwcs"  # same test as in the selector framework
+
+    def exp_id(self) -> str:
+        """
+        Get a textual identifier for this exposure.
 
         Returns
         =======
         `str`
-            The returned string has the form ``{series}{platenum}_{mosnum}``,
-            where the plate number is zero-padded to be five digits wide, and
-            the mosaic number is zero-padded to be two digits wide.
+            The returned string has the form ``{series}{platenum}{tail}``, where
+            the plate number is zero-padded to be five digits wide. If the
+            exposure corresponds to a WCS solution on a mosaic, the tail has the
+            form ``m{mosnum}s{solnum}``. If it corresponds to a logged exposure
+            that is not assignable to a mosaic WCS solution, it has the form
+            ``e{expnum}``.
         """
-        return f"{self['series']}{self['platenum']:05d}_{self['mosnum']:02d}"
+        m = self["mosnum"]
+
+        if m is np.ma.masked:
+            tail = f"e{self['expnum']}"
+        else:
+            tail = f"m{m}s{self['solnum']}"
+
+        return f"{self['series']}{self['platenum']:05d}{tail}"
 
 
-PlateReferenceType = Union[PlateRow, int]
+ExposureReferenceType = Union[ExposureRow, int]
 
 
-class PlateSelector:
+class ExposureSelector:
     """
-    A helper object that supports `Plates` filtering functionality.
+    A helper object that supports `Exposures` filtering functionality.
 
-    Plate selector objects are returned by plate selection "action verbs" such
-    as `Plates.keep_only`. Calling one of the methods on a selector instance
+    Exposure selector objects are returned by exposure selection "action verbs" such
+    as `Exposures.keep_only`. Calling one of the methods on a selector instance
     will apply the associated action to the specified portion of the lightcurve
     data.
 
@@ -148,11 +196,11 @@ class PlateSelector:
     the filtering framework used here.
     """
 
-    _plates: "Plates"
+    _exposures: "Exposures"
     _apply = None
 
-    def __init__(self, plates: "Plates", apply):
-        self._plates = plates
+    def __init__(self, exposures: "Exposures", apply):
+        self._exposures = exposures
         self._apply = apply
 
     def _apply_not(self, flags, **kwargs):
@@ -160,58 +208,58 @@ class PlateSelector:
         return self._apply(~flags, **kwargs)
 
     @property
-    def not_(self) -> "PlateSelector":
+    def not_(self) -> "ExposureSelector":
         """
         Get a selector that will act on an inverted row selection.
 
         Examples
         ========
-        Create a plate-list subset only those plates without good WCS
-        solutions::
+        Create an exposure-list subset containing only those exposures that do
+        not have associated imaging data::
 
             from astropy import units as u
 
-            pl = sess.plates()
-            unsolved = plates.keep_only.not_.wcs_solved()
+            exp = sess.exposures()
+            unsolved = exposures.keep_only.not_.has_imaging()
 
         In general, the function of this modifier is such that::
 
-            pl.ACTION.not_.CONDITION() # should be equivalent to:
-            pl.ACTION.where(~pl.match.CONDITION())
+            exp.ACTION.not_.CONDITION() # should be equivalent to:
+            exp.ACTION.where(~exp.match.CONDITION())
         """
-        return PlateSelector(self._plates, self._apply_not)
+        return ExposureSelector(self._exposures, self._apply_not)
 
-    def where(self, row_mask, **kwargs) -> "Plates":
+    def where(self, row_mask, **kwargs) -> "Exposures":
         """
         Act on exactly the specified list of rows.
 
         Parameters
         ==========
         row_mask : boolean `numpy.ndarray`
-            A boolean array of exactly the size of the input plate list, with true
+            A boolean array of exactly the size of the input exposure list, with true
             values indicating rows that should be acted upon.
         **kwargs
             Parameters forwarded to the action.
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only points that are from A-series
-        plates without good WCS solutions::
+        Create an exposure-list subset containing only exposures that are from A-series
+        exposures and do not have associated imaging data::
 
-            pl = sess.plates()
-            subset = pl.keep_only.where(
-                pl.match.series("a") & pl.match.not_.wcs_solved()
+            exp = sess.exposures()
+            subset = exp.keep_only.where(
+                exp.match.series("a") & exp.match.not_.has_imaging()
             )
         """
         return self._apply(row_mask, **kwargs)
 
-    def rejected(self, **kwargs) -> "Plates":
+    def rejected(self, **kwargs) -> "Exposures":
         """
         Act on rows with a non-zero ``"reject"`` value.
 
@@ -222,21 +270,21 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only rejected rows::
+        Create an exposure-list subset containing only rejected rows::
 
-            pl = sess.plates()
-            rejects = pl.keep_only.rejected()
+            exp = sess.exposures()
+            rejects = exp.keep_only.rejected()
         """
-        m = self._plates["reject"] != 0
+        m = self._exposures["reject"] != 0
         return self._apply(m, **kwargs)
 
-    def rejected_with(self, tag: str, strict: bool = False, **kwargs) -> "Plates":
+    def rejected_with(self, tag: str, strict: bool = False, **kwargs) -> "Exposures":
         """
         Act on rows that have been rejected with the specified tag.
 
@@ -253,30 +301,30 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only rows rejected with the
+        Create an exposure-list subset containing only rows rejected with the
         "astrom" tag:
 
-            pl = sess.plates()
-            astrom_rejects = pl.keep_only.rejected_with("astrom")
+            exp = sess.exposures()
+            astrom_rejects = exp.keep_only.rejected_with("astrom")
         """
-        bitnum0 = self._plates._rejection_tags().get(tag)
+        bitnum0 = self._exposures._rejection_tags().get(tag)
 
         if bitnum0 is not None:
-            m = (self._plates["reject"] & (1 << bitnum0)) != 0
+            m = (self._exposures["reject"] & (1 << bitnum0)) != 0
         elif strict:
             raise Exception(f"unknown rejection tag `{tag}`")
         else:
-            m = np.zeros(len(self._plates), dtype=bool)
+            m = np.zeros(len(self._exposures), dtype=bool)
 
         return self._apply(m, **kwargs)
 
-    def local_id(self, local_id: int, **kwargs) -> "Plates":
+    def local_id(self, local_id: int, **kwargs) -> "Exposures":
         """
         Act on the row with the specified local ID.
 
@@ -289,29 +337,29 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only the chronologically first
+        Create an exposure-list subset containing only the chronologically first
         row::
 
-            pl = sess.plates()
-            first = pl.keep_only.local_id(0)
+            exp = sess.exposures()
+            first = exp.keep_only.local_id(0)
 
         Notes
         =====
-        Plate local IDs are unique, and so this filter should only
+        Exposure local IDs are unique, and so this filter should only
         ever match at most one row.
         """
-        m = self._plates["local_id"] == local_id
+        m = self._exposures["local_id"] == local_id
         return self._apply(m, **kwargs)
 
-    def scanned(self, **kwargs) -> "Plates":
+    def scanned(self, **kwargs) -> "Exposures":
         """
-        Act on rows corresponding to plates that have been scanned.
+        Act on exposures corresponding to plates that have been scanned.
 
         Parameters
         ==========
@@ -320,31 +368,32 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only *unscanned* plates::
+        Create an exposure-list subset containing only exposures from *unscanned* plates::
 
-            pl = sess.plates()
-            unscanned = pl.drop.scanned()
+            exp = sess.exposures()
+            unscanned = exp.drop.scanned()
             # or equivalently:
-            unscanned = pl.keep_only.not_.scanned()
+            unscanned = exp.keep_only.not_.scanned()
 
         Notes
         =====
-        Some plates have been scanned, but do not have astrometric (WCS) solutions.
-        These are not processed by the DASCH photometric pipeline since catalog
-        cross-matching is not possible. Use `wcs_solved()` to act on such plates.
+        Some exposures are known to have occurred, and are associated with plates that
+        have been scanned, but the pipeline was unable to find an associated WCS solution
+        in the plate imagery. Use `has_imaging()` to act only on exposures with WCS
+        solutions.
         """
-        m = ~self._plates["scannum"].mask
+        m = ~self._exposures["scannum"].mask
         return self._apply(m, **kwargs)
 
-    def wcs_solved(self, **kwargs) -> "Plates":
+    def has_imaging(self, **kwargs) -> "Exposures":
         """
-        Act on rows corresponding to plates that have astrometric (WCS) solutions.
+        Act on exposures that can be associated to imaging data.
 
         Parameters
         ==========
@@ -353,26 +402,25 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only WCS-solved plates::
+        Create an exposure-list subset containing only exposures with imaging::
 
-            pl = sess.plates()
-            solved = pl.keep_only.wcs_solved()
+            exp = sess.exposures()
+            solved = exp.keep_only.has_imaging()
 
         Notes
         =====
-        All WCS-solved plates are by definition scanned. Unfortunately, some
-        of the WCS solutions are erroneous.
+        Unfortunately, some of the DASCH WCS solutions are erroneous.
         """
-        m = self._plates["wcssource"] == "imwcs"
+        m = self._exposures["wcssource"] == "imwcs"
         return self._apply(m, **kwargs)
 
-    def series(self, series: str, **kwargs) -> "Plates":
+    def series(self, series: str, **kwargs) -> "Exposures":
         """
         Act on rows associated with the specified plate series.
 
@@ -385,21 +433,21 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only points from the MC series::
+        Create an exposure-list subset containing only exposures from the MC series::
 
-            pl = sess.plates()
-            mcs = pl.keep_only.series("mc")
+            exp = sess.exposures()
+            mcs = exp.keep_only.series("mc")
         """
-        m = self._plates["series"] == series
+        m = self._exposures["series"] == series
         return self._apply(m, **kwargs)
 
-    def narrow(self, **kwargs) -> "Plates":
+    def narrow(self, **kwargs) -> "Exposures":
         """
         Act on rows associated with narrow-field telescopes.
 
@@ -410,24 +458,24 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only points from narrow-field
+        Create an exposure-list subset containing only exposures from narrow-field
         telescopes::
 
-            pl = sess.plates()
-            narrow = pl.keep_only.narrow()
+            exp = sess.exposures()
+            narrow = exp.keep_only.narrow()
         """
         m = np.array(
-            [SERIES[k].kind == SeriesKind.NARROW for k in self._plates["series"]]
+            [SERIES[k].kind == SeriesKind.NARROW for k in self._exposures["series"]]
         )
         return self._apply(m, **kwargs)
 
-    def patrol(self, **kwargs) -> "Plates":
+    def patrol(self, **kwargs) -> "Exposures":
         """
         Act on rows associated with low-resolution "patrol" telescopes.
 
@@ -438,24 +486,24 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only points from patrol
+        Create an exposure-list subset containing only exposures from patrol
         telescopes::
 
-            pl = sess.plates()
-            patrol = pl.keep_only.patrol()
+            exp = sess.exposures()
+            patrol = exp.keep_only.patrol()
         """
         m = np.array(
-            [SERIES[k].kind == SeriesKind.PATROL for k in self._plates["series"]]
+            [SERIES[k].kind == SeriesKind.PATROL for k in self._exposures["series"]]
         )
         return self._apply(m, **kwargs)
 
-    def meteor(self, **kwargs) -> "Plates":
+    def meteor(self, **kwargs) -> "Exposures":
         """
         Act on rows associated with ultra-low-resolution "meteor" telescopes.
 
@@ -466,24 +514,24 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing only points from meteor
+        Create an exposure-list subset containing only exposures from meteor
         telescopes::
 
-            pl = sess.plates()
-            meteor = pl.keep_only.meteor()
+            exp = sess.exposures()
+            meteor = exp.keep_only.meteor()
         """
         m = np.array(
-            [SERIES[k].kind == SeriesKind.METEOR for k in self._plates["series"]]
+            [SERIES[k].kind == SeriesKind.METEOR for k in self._exposures["series"]]
         )
         return self._apply(m, **kwargs)
 
-    def plate_names(self, names: Iterable[str], **kwargs) -> "Plates":
+    def plate_names(self, names: Iterable[str], **kwargs) -> "Exposures":
         """
         Act on rows associated with the specified plate names.
 
@@ -491,39 +539,38 @@ class PlateSelector:
         ==========
         names : iterable of `str`
             Each name should be of the form ``{series}{platenum}``. Capitalization
-            and zero-padding of the plate number are not important. This is different
-            than a plate-ID, which also includes the mosaic number.
+            and zero-padding of the plate number are not important.
         **kwargs
             Parameters forwarded to the action.
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing the specified plates:
+        Create an exposure-list subset containing exposures on the specified plates:
 
-            pl = sess.plates()
-            subset = pl.keep_only.plate_names(["A10000", "mc1235"])
+            exp = sess.exposures()
+            subset = exp.keep_only.plate_names(["A10000", "mc1235"])
         """
         # This feels so inefficient, but it's not obvious to me how to do any better
-        m = np.zeros(len(self._plates), dtype=bool)
+        m = np.zeros(len(self._exposures), dtype=bool)
 
         for name in names:
             series, platenum = _parse_plate_name(name)
-            this_one = (self._plates["series"] == series) & (
-                self._plates["platenum"] == platenum
+            this_one = (self._exposures["series"] == series) & (
+                self._exposures["platenum"] == platenum
             )
             m |= this_one
 
         return self._apply(m, **kwargs)
 
-    def jyear_range(self, jyear_min: float, jyear_max: float, **kwargs) -> "Plates":
+    def jyear_range(self, jyear_min: float, jyear_max: float, **kwargs) -> "Exposures":
         """
-        Act on plates observed within the specified Julian-year time range.
+        Act on exposures observed within the specified Julian-year time range.
 
         Parameters
         ==========
@@ -536,51 +583,52 @@ class PlateSelector:
 
         Returns
         =======
-        Usually, another `Plates`
+        Usually, another `Exposures`
             However, different actions may return different types. For instance,
-            the `Plates.count` action will return an integer.
+            the `Exposures.count` action will return an integer.
 
         Examples
         ========
-        Create a plate-list subset containing plates observed in the 1920's::
+        Create an exposure-list subset containing exposures observed in the 1920's::
 
-            pl = sess.plates()
-            subset = pl.keep_only.jyear_range(1920, 1930)
+            exp = sess.exposures()
+            subset = exp.keep_only.jyear_range(1920, 1930)
 
         Notes
         =====
         The comparison is performed against the ``jyear`` attribute of the
         contents of the ``"obs_date"`` column.
         """
-        m = (self._plates["obs_date"].jyear >= jyear_min) & (
-            self._plates["obs_date"].jyear <= jyear_max
+        m = (self._exposures["obs_date"].jyear >= jyear_min) & (
+            self._exposures["obs_date"].jyear <= jyear_max
         )
         return self._apply(m, **kwargs)
 
 
-class Plates(Table):
+class Exposures(Table):
     """
-    A table of DASCH plate information.
+    A table of DASCH exposure information.
 
-    A `Plates` is a subclass of `astropy.table.Table` containing DASCH plate
-    data and associated plate-specific methods. You can use all of the usual
-    methods and properties made available by the `astropy.table.Table` class.
-    Items provided by the `~astropy.table.Table` class are not documented here.
+    An `Exposures` table is a subclass of `astropy.table.Table` containing DASCH
+    exposure data and associated exposure-specific methods. You can use all of
+    the usual methods and properties made available by the `astropy.table.Table`
+    class. Items provided by the `~astropy.table.Table` class are not documented
+    here.
 
-    You should not construct `Plates` instances directly. Instead, obtain the
-    full table using the `daschlab.Session.plates()` method.
+    You should not construct `Exposures` instances directly. Instead, obtain the
+    full table using the `daschlab.Session.exposures()` method.
 
     The actual data contained in these tables — the columns — are documented
     elsewhere, `on the main DASCH website`_.
 
-    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/platelist-columns/
+    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/exposurelist-columns/
 
     See :ref:`the module-level documentation <lc-filtering>` of the
     `daschlab.lightcurves` for a summary of the filtering and subsetting
     functionality provided by this class.
     """
 
-    Row = PlateRow
+    Row = ExposureRow
 
     def _sess(self) -> "daschlab.Session":
         from . import _lookup_session
@@ -591,11 +639,11 @@ class Plates(Table):
         return self.meta.setdefault("daschlab_rejection_tags", {})
 
     def _layers(self) -> Dict[int, ImageLayer]:
-        return self._sess()._plate_image_layer_cache
+        return self._sess()._exposure_image_layer_cache
 
     # Filtering infrastructure
 
-    def _copy_subset(self, keep, verbose: bool) -> "Plates":
+    def _copy_subset(self, keep, verbose: bool) -> "Exposures":
         new = self.copy(True)
         new = new[keep]
 
@@ -606,49 +654,49 @@ class Plates(Table):
         return new
 
     @property
-    def match(self) -> PlateSelector:
+    def match(self) -> ExposureSelector:
         """
         An :ref:`action <lc-filtering>` returning a boolean array identifying selected rows.
 
-        Unlike many actions, this does not return a new `Plates`. It can be used
+        Unlike many actions, this does not return a new `Exposures`. It can be used
         to implement arbitrary boolean logic within the action/selection framework::
 
-            pl = sess.plates()
-            subset = pl.keep_only.where(
-                pl.match.series("a") & pl.match.wcs_solved()
+            exp = sess.exposures()
+            subset = exp.keep_only.where(
+                exp.match.series("a") & exp.match.has_imaging()
             )
         """
-        return PlateSelector(self, lambda m: m)
+        return ExposureSelector(self, lambda m: m)
 
     @property
-    def count(self) -> PlateSelector:
+    def count(self) -> ExposureSelector:
         """
         An :ref:`action <lc-filtering>` returning the number of selected rows
 
-        Unlike many actions, this returns an `int`, not a new `Plates`.
+        Unlike many actions, this returns an `int`, not a new `Exposures`.
         """
-        return PlateSelector(self, lambda m: m.sum())
+        return ExposureSelector(self, lambda m: m.sum())
 
-    def _apply_keep_only(self, flags, verbose=True) -> "Plates":
+    def _apply_keep_only(self, flags, verbose=True) -> "Exposures":
         return self._copy_subset(flags, verbose)
 
     @property
-    def keep_only(self) -> PlateSelector:
+    def keep_only(self) -> ExposureSelector:
         """
-        An :ref:`action <lc-filtering>` returning a `Plates` copy containing only the selected rows.
+        An :ref:`action <lc-filtering>` returning an `Exposures` copy containing only the selected rows.
         """
-        return PlateSelector(self, self._apply_keep_only)
+        return ExposureSelector(self, self._apply_keep_only)
 
-    def _apply_drop(self, flags, verbose=True) -> "Plates":
+    def _apply_drop(self, flags, verbose=True) -> "Exposures":
         return self._copy_subset(~flags, verbose)
 
     @property
-    def drop(self) -> PlateSelector:
+    def drop(self) -> ExposureSelector:
         """
-        An :ref:`action <lc-filtering>` returning a `Plates` copy dropping
+        An :ref:`action <lc-filtering>` returning an `Exposures` copy dropping
         the selected rows; all non-selected rows are retained.
         """
-        return PlateSelector(self, self._apply_drop)
+        return ExposureSelector(self, self._apply_drop)
 
     def _process_reject_tag(self, tag: str, verbose: bool) -> int:
         if not tag:
@@ -683,17 +731,17 @@ class Plates(Table):
             )
 
     @property
-    def reject(self) -> PlateSelector:
+    def reject(self) -> ExposureSelector:
         """
-        An :ref:`action <lc-filtering>` modifying the plate-list in-place,
+        An :ref:`action <lc-filtering>` modifying the exposure-list in-place,
         rejecting the selected rows.
 
         Usage is as follows::
 
-            pl = sess.plates()
+            exp = sess.exposures()
 
-            # Mark all points from meteor telescopes as rejected:
-            pl.reject.meteor(tag="meteor")
+            # Mark all exposures from meteor telescopes as rejected:
+            exp.reject.meteor(tag="meteor")
 
         The ``tag`` keyword argument to the selector is mandatory. It specifies
         a short, arbitrary "tag" documenting the reason for rejection. Each
@@ -702,26 +750,26 @@ class Plates(Table):
         The maximum number of distinct rejection tags is 64, since the ``"reject"``
         column is stored as a 64-bit integer.
         """
-        return PlateSelector(self, self._apply_reject)
+        return ExposureSelector(self, self._apply_reject)
 
     def _apply_reject_unless(self, flags, tag: str = None, verbose: bool = True):
         return self._apply_reject(~flags, tag, verbose)
 
     @property
-    def reject_unless(self) -> PlateSelector:
+    def reject_unless(self) -> ExposureSelector:
         """
-        An :ref:`action <lc-filtering>` modifying the plate-list in-place,
+        An :ref:`action <lc-filtering>` modifying the exposure-list in-place,
         rejecting rows not matching the selection.
 
         Usage is as follows::
 
-            pl = sess.plates()
+            exp = sess.exposures()
 
-            # Mark all plates *not* from narrow-field telescopes as rejected:
-            pl.reject_unless.narrow(tag="lowrez")
+            # Mark all exposures *not* from narrow-field telescopes as rejected:
+            exp.reject_unless.narrow(tag="lowrez")
 
             # This is equivalent to:
-            pl.reject.not_.narrow(tag="lowrez")
+            exp.reject.not_.narrow(tag="lowrez")
 
         The ``tag`` keyword argument to the selector is mandatory. It specifies
         a short, arbitrary "tag" documenting the reason for rejection. Each
@@ -730,7 +778,7 @@ class Plates(Table):
         The maximum number of distinct rejection tags is 64, since the ``"reject"``
         column is stored as a 64-bit integer.
         """
-        return PlateSelector(self, self._apply_reject_unless)
+        return ExposureSelector(self, self._apply_reject_unless)
 
     # Non-filtering actions on this list
 
@@ -749,7 +797,7 @@ class Plates(Table):
         Columns in the returned table include:
 
         - ``"series"``: the plate series in question
-        - ``"count"``: the number of plates from the series in *self*
+        - ``"count"``: the number of exposures from the series in *self*
         - ``"kind"``: the `daschlab.series.SeriesKind` of this series
         - ``"plate_scale"``: the typical plate scale of this series (in arcsec/mm)
         - ``"aperture"``: the telescope aperture of this series (in meters)
@@ -782,7 +830,7 @@ class Plates(Table):
         limit_rows: Optional[int] = 8,
     ) -> "daschlab.lightcurves.Lightcurve":
         """
-        Return a table with information about plates that might contain "nice"
+        Return a table with information about exposures that might contain "nice"
         imagery of the target, in some vague sense.
 
         Parameters
@@ -795,7 +843,7 @@ class Plates(Table):
 
         limit_cols : optional `bool`, default `True`
             If true, drop various columns from the returned table. The preserved
-            columns will be only the ones relevant to inferring the plate image
+            columns will be only the ones relevant to inferring the exposure image
             quality.
 
         limit_rows : optional `int` or None, default 10
@@ -822,7 +870,7 @@ class Plates(Table):
         lc = sess.lightcurve(source_of_interest)
         lc = lc.drop.rejected(verbose=False)
 
-        # If we have an acceptable number of detections, consider only plates
+        # If we have an acceptable number of detections, consider only exposures
         # that detect the SOI. The cutoff here is totally arbitrary.
         if lc.count.nonrej_detected() > 10:
             lc = lc.keep_only.nonrej_detected(verbose=False)
@@ -830,7 +878,7 @@ class Plates(Table):
         lc.sort(["limiting_mag_local"], reverse=True)
 
         if limit_cols:
-            cols = "limiting_mag_local plate_local_id series platenum fwhm_world ellipticity background".split()
+            cols = "limiting_mag_local exp_local_id series platenum fwhm_world ellipticity background".split()
             lc = lc[cols]
 
         if limit_rows and limit_rows > 0:
@@ -840,7 +888,7 @@ class Plates(Table):
 
     def time_coverage(self) -> figure:
         """
-        Plot the observing time coverage of the non-rejected plates in this list.
+        Plot the observing time coverage of the non-rejected exposures in this list.
 
         Returns
         =======
@@ -850,7 +898,7 @@ class Plates(Table):
         Notes
         =====
         The plot is generated by using a Gaussian kernel density estimator to
-        smooth out the plate observation times.
+        smooth out the exposure observation times.
 
         The function `bokeh.io.show` (imported as ``bokeh.plotting.show``) is
         called on the figure before it is returned, so you don't need to do that
@@ -859,39 +907,39 @@ class Plates(Table):
         from scipy.stats import gaussian_kde
 
         plot_years = np.linspace(1875, 1995, 200)
-        plate_years = self.drop.rejected(verbose=False)["obs_date"].jyear
+        exp_years = self.drop.rejected(verbose=False)["obs_date"].jyear
 
-        kde = gaussian_kde(plate_years, bw_method="scott")
-        plate_years_smoothed = kde(plot_years)
+        kde = gaussian_kde(exp_years, bw_method="scott")
+        exp_years_smoothed = kde(plot_years)
 
         # try to get the normalization right: integral of the
-        # curve is equal to the number of plates, so that the
-        # Y axis is plates per year.
+        # curve is equal to the number of exposures, so that the
+        # Y axis is exposures per year.
 
-        integral = plate_years_smoothed.sum() * (plot_years[1] - plot_years[0])
-        plate_years_smoothed *= len(self) / integral
+        integral = exp_years_smoothed.sum() * (plot_years[1] - plot_years[0])
+        exp_years_smoothed *= len(self) / integral
 
         p = figure(
             x_axis_label="Year",
-            y_axis_label="Plates per year (smoothed)",
+            y_axis_label="Exposures per year (smoothed)",
         )
-        p.line(plot_years, plate_years_smoothed)
+        p.line(plot_years, exp_years_smoothed)
         show(p)
         return p
 
-    def show(self, plate_ref: PlateReferenceType) -> ImageLayer:
+    def show(self, exp_ref: ExposureReferenceType) -> ImageLayer:
         """
-        Display the cutout of the specified plate in the WWT view.
+        Display the cutout of the specified exposure in the WWT view.
 
         Parameters
         ==========
-        plate_ref : `PlateRow` or `int`
+        exp_ref : `ExposureRow` or `int`
             If this argument is an integer, it is interpreted as the "local ID"
-            of a plate. Local IDs are assigned in chronological order of
-            observing time, so a value of ``0`` shows the first plate. This will
-            only work if the selected plate is scanned and WCS-solved.
+            of an exposure. Local IDs are assigned in chronological order of
+            observing time, so a value of ``0`` shows the first exposure. This will
+            only work if the selected exposure is scanned and WCS-solved.
 
-            If this argument is an instance of `PlateRow`, the specified plate
+            If this argument is an instance of `ExposureRow`, the specified exposure
             is shown.
 
         Returns
@@ -907,20 +955,20 @@ class Plates(Table):
         `daschlab.Session.connect_to_wwt()`. If needed, this method will execute
         an API call and download the cutout to be displayed, which may be slow.
         """
-        plate = self._sess()._resolve_plate_reference(plate_ref)
+        exposure = self._sess()._resolve_exposure_reference(exp_ref)
 
-        local_id = plate["local_id"]
+        local_id = exposure["local_id"]
         il = self._layers().get(local_id)
 
         if il is not None:
             return il  # TODO: bring it to the top, etc?
 
-        fits_relpath = self._sess().cutout(plate)
+        fits_relpath = self._sess().cutout(exposure)
         if fits_relpath is None:
             from . import InteractiveError
 
             raise InteractiveError(
-                f"cannot create a cutout for plate #{local_id:05d} ({plate.plate_id()})"
+                f"cannot create a cutout for exposure #{local_id:05d} ({exposure.exp_id()})"
             )
 
         il = (
@@ -933,26 +981,26 @@ class Plates(Table):
 
     def export(self, path: str, format: str = "csv", drop_rejects: bool = True):
         """
-        Save a copy of this plate list to a file.
+        Save a copy of this exposure list to a file.
 
         Parameters
         ==========
         path : `str`
-            The path at which the exported plate list data will be saved.
+            The path at which the exported exposure list data will be saved.
         format : `str`, default ``"csv"``
             The file format in which to save the data. Currently, the only
             allowed value is ``"csv"``.
         drop_rejects : `bool`, default `True`
-            If True, rejected plates will not appear in the output file at all.
+            If True, rejected exposures will not appear in the output file at all.
             Otherwise, they will be included, and there will be a ``"reject"``
             column reproducing their rejection status.
 
         Notes
         =====
         The default ``"csv"`` output format only exports a subset of the table columns
-        known as the “medium” subset. It is defined in `the plate-list table documentation`_.
+        known as the “medium” subset. It is defined in `the exposure-list table documentation`_.
 
-        .. _the plate-list table documentation: https://dasch.cfa.harvard.edu/drnext/platelist-columns/#medium-columns
+        .. _the exposure-list table documentation: https://dasch.cfa.harvard.edu/drnext/exposurelist-columns/#medium-columns
         """
 
         if format != "csv":
@@ -993,7 +1041,7 @@ class Plates(Table):
 
     def export_cutouts_to_pdf(self, pdfpath: str, **kwargs):
         """
-        Export cutouts of the plates in this list to a PDF file.
+        Export cutouts of the exposures in this list to a PDF file.
 
         Parameters
         ==========
@@ -1012,8 +1060,8 @@ class Plates(Table):
         Notes
         =====
         This operation will by default attempt to download a cutout for every
-        WCS-solved plate in the list. This can be extremely slow, as well as
-        creating a lot of work for the API server. Only use it for short plate
+        exposure with imaging in the list. This can be extremely slow, as well as
+        creating a lot of work for the API server. Only use it for short exposure
         lists.
 
         The format of the created file needs to be documented.
@@ -1021,17 +1069,17 @@ class Plates(Table):
         _pdf_export(pdfpath, self._sess(), self, **kwargs)
 
 
-def _query_plates(
+def _query_exposures(
     center: SkyCoord,
     radius: u.Quantity,
-) -> Plates:
-    return _postproc_plates(_get_plate_cols(center, radius))
+) -> Exposures:
+    return _postproc_exposures(_get_exposure_cols(center, radius))
 
 
-def _get_plate_cols(
+def _get_exposure_cols(
     center: SkyCoord,
     radius: u.Quantity,
-) -> Plates:
+) -> Exposures:
     radius = Angle(radius)
 
     # API-based query
@@ -1067,7 +1115,7 @@ def _get_plate_cols(
                         cdata.append(ctype(row))
 
     if colnames is None:
-        raise Exception("empty plate-table data response")
+        raise Exception("empty exposure-table data response")
 
     return dict(t for t in zip(colnames, coldata) if t[1] is not None)
 
@@ -1116,8 +1164,8 @@ def _dasch_dates_as_time_array(dates) -> Time:
     return times
 
 
-def _postproc_plates(input_cols) -> Plates:
-    table = Plates(masked=True)
+def _postproc_exposures(input_cols) -> Exposures:
+    table = Exposures(masked=True)
 
     scannum = np.array(input_cols["scannum"], dtype=np.int8)
     scanned_mask = scannum == -1
@@ -1144,7 +1192,7 @@ def _postproc_plates(input_cols) -> Plates:
     )
     table["edge_distance"] = np.array(input_cols["edgedist"], dtype=np.float32) * u.cm
 
-    # Some plates are missing position data, flagged with 999/99's.
+    # Some exposures are missing position data, flagged with 999/99's.
     ra = np.array(input_cols["ra"])
     dec = np.array(input_cols["dec"])
     bad_pos = (ra == 999) | (dec == 99)
@@ -1210,7 +1258,7 @@ def _data_to_image(data: np.array) -> Image:
 def _pdf_export(
     pdfpath: str,
     sess: "Session",
-    plates: Plates,
+    exposures: Exposures,
     refcat_stdmag_limit: Optional[float] = None,
     no_download: bool = False,
 ):
@@ -1230,28 +1278,30 @@ def _pdf_export(
 
     # First thing, ensure that we have all of our cutouts
 
-    n_orig = len(plates)
-    plates = plates.keep_only.wcs_solved(verbose=False).drop.rejected(verbose=False)
-    n_filtered = len(plates)
+    n_orig = len(exposures)
+    exposures = exposures.keep_only.has_imaging(verbose=False).drop.rejected(
+        verbose=False
+    )
+    n_filtered = len(exposures)
 
     if not n_filtered:
-        raise Exception("no plates remain after filtering")
+        raise Exception("no exposures remain after filtering")
 
     if n_filtered != n_orig:
         print(
-            f"Filtered input list of {n_orig} plates down to {n_filtered} for display"
+            f"Filtered input list of {n_orig} exposures down to {n_filtered} for display"
         )
 
     if not no_download:
         print(
-            f"Ensuring that we have cutouts for {n_filtered} plates, this may take a while ..."
+            f"Ensuring that we have cutouts for {n_filtered} exposures, this may take a while ..."
         )
         t0 = time.time()
 
-        for plate in plates:
-            if not sess.cutout(plate):
+        for exposure in exposures:
+            if not sess.cutout(exposure):
                 raise Exception(
-                    f"unable to fetch cutout for plate LocalId {plate['local_id']}"
+                    f"unable to fetch cutout for exposure LocalId {exposure['local_id']}"
                 )
 
         elapsed = time.time() - t0
@@ -1279,20 +1329,19 @@ def _pdf_export(
     wcs = None
 
     with cairo.PDFSurface(pdfpath, PAGE_WIDTH, PAGE_HEIGHT) as pdf:
-        for plate in plates:
-            local_id = plate["local_id"]
-            series = plate["series"]
-            platenum = plate["platenum"]
-            mosnum = plate["mosnum"]
-            plateclass = plate["class"] or "(none)"
-            jd = plate["obs_date"].jd
-            epoch = plate["obs_date"].jyear
-            # platescale = plate["plate_scale"]
-            exptime = plate["exptime"]
-            center_distance_cm = plate["center_distance"]
-            edge_distance_cm = plate["edge_distance"]
+        for exposure in exposures:
+            local_id = exposure["local_id"]
+            series = exposure["series"]
+            platenum = exposure["platenum"]
+            plateclass = exposure["class"] or "(none)"
+            jd = exposure["obs_date"].jd
+            epoch = exposure["obs_date"].jyear
+            # platescale = exposure["plate_scale"]
+            exptime = exposure["exptime"]
+            center_distance_cm = exposure["center_distance"]
+            edge_distance_cm = exposure["edge_distance"]
 
-            fits_relpath = sess.cutout(plate, no_download=no_download)
+            fits_relpath = sess.cutout(exposure, no_download=no_download)
             if fits_relpath is None:
                 continue
 
@@ -1437,7 +1486,7 @@ def _pdf_export(
 
             cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
             cr.show_text(
-                f"Mosaic {series:>4}{platenum:05d}_{mosnum:02d}: "
+                f"Exposure {exposure.exp_id():>14}: "
                 f"astrom {astrom_type.upper():3} "
                 f"class {plateclass:12} "
                 f"exp {exptime:5.1f} (min) "

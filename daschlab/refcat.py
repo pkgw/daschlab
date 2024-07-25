@@ -99,7 +99,9 @@ class RefcatSources(Table):
 
         return _lookup_session(self.meta["daschlab_sess_key"])
 
-    def show(self, mag_limit: Optional[float] = None) -> TableLayer:
+    def show(
+        self, mag_limit: Optional[float] = None, size_vmin_bias: float = 1.0
+    ) -> TableLayer:
         """
         Display the catalog contents in the WWT view.
 
@@ -109,6 +111,12 @@ class RefcatSources(Table):
             For display purposes, source magnitudes fainter (larger) than this
             value, or missing magnitudes, will be filled in with this value.
             If unspecified (`None`), the maximum unmasked value will be used.
+        size_vmin_bias : optional `float`, default 1.0
+            The WWT layer's ``size_vmin`` setting is set to the ``mag_limit``
+            plus this number. Larger values cause relatively faint sources
+            to be rendered with relatively larger indicators. This makes them
+            easier to see, at a cost of somewhat reducing the dynamic range of
+            the indicator sizing.
 
         Returns
         =======
@@ -151,7 +159,7 @@ class RefcatSources(Table):
 
         tl.marker_type = "circle"
         tl.size_att = "viz_mag"
-        tl.size_vmin = mag_limit
+        tl.size_vmin = mag_limit + size_vmin_bias
         tl.size_vmax = compat_table["viz_mag"].min()
         tl.size_scale = 10.0
         return tl
