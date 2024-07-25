@@ -270,9 +270,9 @@ _AFLAG_DESCRIPTIONS = [
     "Object brightness is too close to the local limiting magnitude",
     "Object is in radial bin 9 (close to the plate edge)",
     "Object's spatial bin has unmeasured `drad`",
-    "(bit 17 unused)",
-    "(bit 18 unused)",
-    "(bit 19 unused)",
+    "(bit 17 composite)",
+    "(bit 18 composite)",
+    "(bit 19 composite)",
     "Magnitude of the catalog source is uncertain/variable",
     '"Case B" blend - multiple catalog entries for one imaged star',
     '"Case C" blend - mutiple imaged stars for one catalog entry',
@@ -285,6 +285,17 @@ _AFLAG_DESCRIPTIONS = [
     "Smoothing correction is suspiciously large",
     "Object is too bright for accurate calibration",
     "Low altitude - object is within 23.5 deg of the horizon",
+]
+
+_AFLAG_COMPOSITE_FIELDS = [
+    "(no composite flags)",
+    "Galaxy not in refcat",
+    "Blend not in refcat",
+    "Object is non-star",
+    "Unclassified object type, not in refcat",
+    "Object is defect",
+    "(composite value 6 unused)",
+    "Duplicate star",
 ]
 
 
@@ -514,7 +525,7 @@ _PLATE_QUALITY_FLAG_DESCRIPTIONS = [
 ]
 
 
-def _report_flags(desc, observed, enumtype, descriptions):
+def _report_flags(desc, observed, enumtype, descriptions, ignore_leftover_bits=0):
     print(f"{desc}: 0x{observed:08X}")
 
     if not observed:
@@ -528,7 +539,7 @@ def _report_flags(desc, observed, enumtype, descriptions):
             print(f"  bit {bit:2d}: {iflag.name:32} - {descriptions[bit - 1]}")
             accum |= iflag.value
 
-    if accum != observed:
+    if (accum | ignore_leftover_bits) != (observed | ignore_leftover_bits):
         print(f"  !! unexpected leftover bits: {observed & ~accum:08X}")
 
 
@@ -552,7 +563,20 @@ class LightcurvePoint(Row):
         `AFlags`, `BFlags`, `LocalBinRejectFlags`, and `PlateQualityFlags`.
         """
 
-        _report_flags("AFLAGS", self["aflags"], AFlags, _AFLAG_DESCRIPTIONS)
+        _report_flags(
+            "AFLAGS",
+            self["aflags"],
+            AFlags,
+            _AFLAG_DESCRIPTIONS,
+            ignore_leftover_bits=0x70000,
+        )
+
+        c = (self["aflags"] >> 16) & 0x7
+        if c:
+            print(
+                f"  bits 16-18: (composite flags)            - {_AFLAG_COMPOSITE_FIELDS[c]}"
+            )
+
         _report_flags("BFLAGS", self["bflags"], BFlags, _BFLAG_DESCRIPTIONS)
         _report_flags(
             "LocalBinReject",
@@ -2052,7 +2076,7 @@ def merge(lcs: List[Lightcurve]) -> Lightcurve:
             expid = untabulated_exps[key]
 
         if dets_by_exp.get(expid) is None:
-            no_dets.append(expid, i_row)
+            no_dets.append((expid, i_row))
 
     # We now know how many output rows we're going to have
 
