@@ -13,10 +13,10 @@ Session
       ~Session.connect_to_wwt
       ~Session.cutout
       ~Session.delete_data
+      ~Session.exposures
       ~Session.lightcurve
       ~Session.merge_lightcurves
       ~Session.path
-      ~Session.plates
       ~Session.query
       ~Session.refcat
       ~Session.select_refcat
@@ -28,10 +28,10 @@ Session
    .. automethod:: connect_to_wwt
    .. automethod:: cutout
    .. automethod:: delete_data
+   .. automethod:: exposures
    .. automethod:: lightcurve
    .. automethod:: merge_lightcurves
    .. automethod:: path
-   .. automethod:: plates
    .. automethod:: query
    .. automethod:: refcat
    .. automethod:: select_refcat

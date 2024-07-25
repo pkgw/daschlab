@@ -1,32 +1,32 @@
-Plates
-======
+Exposures
+=========
 
-.. currentmodule:: daschlab.plates
+.. currentmodule:: daschlab.exposures
 
-.. autoclass:: Plates
+.. autoclass:: Exposures
    :show-inheritance:
 
    .. rubric:: Attributes Summary
 
    .. autosummary::
 
-      ~Plates.count
-      ~Plates.drop
-      ~Plates.keep_only
-      ~Plates.match
-      ~Plates.reject
-      ~Plates.reject_unless
+      ~Exposures.count
+      ~Exposures.drop
+      ~Exposures.keep_only
+      ~Exposures.match
+      ~Exposures.reject
+      ~Exposures.reject_unless
 
    .. rubric:: Methods Summary
 
    .. autosummary::
 
-      ~Plates.candidate_nice_cutouts
-      ~Plates.export
-      ~Plates.export_cutouts_to_pdf
-      ~Plates.series_info
-      ~Plates.show
-      ~Plates.time_coverage
+      ~Exposures.candidate_nice_cutouts
+      ~Exposures.export
+      ~Exposures.export_cutouts_to_pdf
+      ~Exposures.series_info
+      ~Exposures.show
+      ~Exposures.time_coverage
 
    .. rubric:: Attributes Documentation
 

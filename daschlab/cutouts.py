@@ -7,7 +7,7 @@ Handling DASCH cutouts.
 This module currently has no public API. See:
 
 - `daschlab.Session.cutout()`
-- `daschlab.plates.Plates.show()`
+- `daschlab.exposures.Exposures.show()`
 """
 
 from urllib.parse import urlencode

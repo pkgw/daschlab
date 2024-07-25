@@ -14,8 +14,8 @@ for f in *.rst; do
     case "$f" in
     daschlab.rst|\
     daschlab.cutouts.rst|\
+    daschlab.exposures.rst|\
     daschlab.lightcurves.rst|\
-    daschlab.plates.rst|\
     daschlab.query.rst|\
     daschlab.refcat.rst|\
     daschlab.series.rst) ;;

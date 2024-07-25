@@ -6,7 +6,7 @@ Information about the various plate series encountered in DASCH.
 
 You will probably not need to use this module directly. It provides data that
 are used to fill in other tables such as those provided by
-`daschlab.plates.Plates.series_info()`.
+`daschlab.exposures.Exposures.series_info()`.
 """
 
 from dataclasses import dataclass

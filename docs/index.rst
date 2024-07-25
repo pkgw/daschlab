@@ -21,8 +21,8 @@ and howtos, see `the DASCH DRnext documentation`_.
 
    api/daschlab
    api/daschlab.cutouts
+   api/daschlab.exposures
    api/daschlab.lightcurves
-   api/daschlab.plates
    api/daschlab.query
    api/daschlab.refcat
    api/daschlab.series
