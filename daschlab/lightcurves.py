@@ -1924,10 +1924,10 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
     # Information about the associated catalog source
 
-    table["catalog_ra"] = mq("ra_2", np.float32, u.deg)
-    table["catalog_dec"] = mq("dec_2", np.float32, u.deg)
-    table["pm_ra_cosdec"] = mq("RaPM", np.float32, u.mas / u.yr)
-    table["pm_dec"] = mq("DecPM", np.float32, u.mas / u.yr)
+    table["catalog_ra"] = extra_mq("ra_2", np.float32, u.deg, 999.0)
+    table["catalog_dec"] = extra_mq("dec_2", np.float32, u.deg, 99.0)
+    table["pm_ra_cosdec"] = extra_mq("RaPM", np.float32, u.mas / u.yr, 999999.0)
+    table["pm_dec"] = extra_mq("DecPM", np.float32, u.mas / u.yr, 999999.0)
 
     # Information about the associated plate
 
