@@ -10,7 +10,6 @@ can be obtained with the `daschlab.Session.refcat()` method.
 
 from copy import copy
 from typing import Literal, Optional, Union
-from urllib.parse import urlencode
 
 from astropy.coordinates import Angle, SkyCoord
 from astropy.table import Row, Table
@@ -24,7 +23,8 @@ from pywwt.layers import TableLayer
 __all__ = ["RefcatSources", "RefcatSourceRow", "SourceReferenceType"]
 
 
-_API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/querycat.php"
+# TODO: genericize
+_API_URL = "https://api.dev.starglass.cfa.harvard.edu/public/dasch/dr7/querycat"
 
 _COLTYPES = {
     "ref_text": str,
@@ -174,28 +174,28 @@ def _query_refcat(
 
     # API-based query
 
-    url = (
-        _API_URL
-        + "?"
-        + urlencode(
-            {
-                "name": name,
-                "cra_deg": center.ra.deg,
-                "cdec_deg": center.dec.deg,
-                "radius_arcsec": radius.arcsec,
-            }
-        )
-    )
+    url = _API_URL
+
+    payload = {
+        "refcat": name,
+        "ra_deg": center.ra.deg,
+        "dec_deg": center.dec.deg,
+        "radius_arcsec": radius.arcsec,
+    }
 
     colnames = None
     coltypes = None
     coldata = None
     saw_sep = False
 
-    with requests.get(url, stream=True) as resp:
-        for line in resp.iter_lines():
-            line = line.decode("utf-8")
-            pieces = line.rstrip().split("\t")
+    with requests.post(url, json=payload) as resp:
+        # Would be nice to stream the response, but we have to decode it as JSON
+        # in the end anyway. For this API, the response is a list of strings, each
+        # giving one line of CSV output.
+        data = resp.json()
+
+        for line in data:
+            pieces = line.split(",")
 
             if colnames is None:
                 colnames = pieces
