@@ -40,7 +40,7 @@ import time
 from typing import Dict, Iterable, Optional, Tuple, Union
 import warnings
 
-from astropy.coordinates import Angle, SkyCoord
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table, Row
 from astropy.time import Time
@@ -52,15 +52,12 @@ import numpy as np
 from PIL import Image
 from pytz import timezone
 from pywwt.layers import ImageLayer
-import requests
 
+from .apiclient import ApiClient
 from .series import SERIES, SeriesKind
 
+
 __all__ = ["Exposures", "ExposureReferenceType", "ExposureRow", "ExposureSelector"]
-
-
-# TODO: genericize
-_API_URL = "https://api.dev.starglass.cfa.harvard.edu/public/dasch/dr7/queryexps"
 
 
 def _daschtime_to_isot(t: str) -> str:
@@ -1073,18 +1070,16 @@ class Exposures(Table):
 
 
 def _query_exposures(
+    client: ApiClient,
     center: SkyCoord,
 ) -> Exposures:
-    return _postproc_exposures(_get_exposure_cols(center))
+    return _postproc_exposures(_get_exposure_cols(client, center))
 
 
 def _get_exposure_cols(
+    client: ApiClient,
     center: SkyCoord,
 ) -> Exposures:
-    # API-based query
-
-    url = _API_URL
-
     payload = {
         "ra_deg": center.ra.deg,
         "dec_deg": center.dec.deg,
@@ -1093,24 +1088,19 @@ def _get_exposure_cols(
     colnames = None
     coltypes = None
     coldata = None
+    data = client.invoke("queryexps", payload)
 
-    with requests.post(url, json=payload) as resp:
-        # Would be nice to stream the response, but we have to decode it as JSON
-        # in the end anyway. For this API, the response is a list of strings,
-        # each giving one line of CSV output.
-        data = resp.json()
+    for line in data:
+        pieces = line.split(",")
 
-        for line in data:
-            pieces = line.split(",")
-
-            if colnames is None:
-                colnames = pieces
-                coltypes = [_COLTYPES.get(c) for c in colnames]
-                coldata = [[] if t is not None else None for t in coltypes]
-            else:
-                for row, ctype, cdata in zip(pieces, coltypes, coldata):
-                    if ctype is not None:
-                        cdata.append(ctype(row))
+        if colnames is None:
+            colnames = pieces
+            coltypes = [_COLTYPES.get(c) for c in colnames]
+            coldata = [[] if t is not None else None for t in coltypes]
+        else:
+            for row, ctype, cdata in zip(pieces, coltypes, coldata):
+                if ctype is not None:
+                    cdata.append(ctype(row))
 
     if colnames is None:
         raise Exception("empty exposure-table data response")

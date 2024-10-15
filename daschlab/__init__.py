@@ -52,6 +52,7 @@ import astropy.utils.exceptions
 import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
+from .apiclient import ApiClient
 from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
 from .exposures import Exposures, ExposureRow, _query_exposures
@@ -150,6 +151,7 @@ class Session:
 
     _root: pathlib.Path
     _interactive: bool = True
+    _apiclient: ApiClient
     _internal_simg: str = ""
     _query: Optional[SessionQuery] = None
     _refcat: Optional[RefcatSources] = None
@@ -162,6 +164,7 @@ class Session:
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
         self._root = pathlib.Path(root)
         self._interactive = interactive
+        self._apiclient = ApiClient()
         self._internal_simg = _internal_simg
         self._lc_cache = {}
         self._exposure_image_layer_cache = {}
@@ -408,7 +411,9 @@ class Session:
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        self._refcat = _query_refcat(name, self._query.pos_as_skycoord(), REFCAT_RADIUS)
+        self._refcat = _query_refcat(
+            self._apiclient, name, self._query.pos_as_skycoord(), REFCAT_RADIUS
+        )
         self._refcat.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("refcat.ecsv") as f_new:
@@ -473,7 +478,9 @@ class Session:
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        self._exposures = _query_exposures(self._query.pos_as_skycoord())
+        self._exposures = _query_exposures(
+            self._apiclient, self._query.pos_as_skycoord()
+        )
         self._exposures.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("exposures.ecsv") as f_new:
@@ -734,7 +741,7 @@ class Session:
 
         try:
             fits_data = _query_cutout(
-                exp["series"], exp["platenum"], exp["solnum"], center
+                self._apiclient, exp["series"], exp["platenum"], exp["solnum"], center
             )
         except Exception as e:
             # Now that we are better about distinguishing between exposures that

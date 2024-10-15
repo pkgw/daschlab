@@ -17,14 +17,13 @@ from astropy.time import Time
 from astropy import units as u
 from astropy.utils.masked import Masked
 import numpy as np
-import requests
 from pywwt.layers import TableLayer
+
+from .apiclient import ApiClient
+
 
 __all__ = ["RefcatSources", "RefcatSourceRow", "SourceReferenceType"]
 
-
-# TODO: genericize
-_API_URL = "https://api.dev.starglass.cfa.harvard.edu/public/dasch/dr7/querycat"
 
 _COLTYPES = {
     "ref_text": str,
@@ -166,16 +165,12 @@ class RefcatSources(Table):
 
 
 def _query_refcat(
+    client: ApiClient,
     name: str,
     center: SkyCoord,
     radius: u.Quantity,
 ) -> RefcatSources:
     radius = Angle(radius)
-
-    # API-based query
-
-    url = _API_URL
-
     payload = {
         "refcat": name,
         "ra_deg": center.ra.deg,
@@ -187,26 +182,21 @@ def _query_refcat(
     coltypes = None
     coldata = None
     saw_sep = False
+    data = client.invoke("querycat", payload)
 
-    with requests.post(url, json=payload) as resp:
-        # Would be nice to stream the response, but we have to decode it as JSON
-        # in the end anyway. For this API, the response is a list of strings, each
-        # giving one line of CSV output.
-        data = resp.json()
+    for line in data:
+        pieces = line.split(",")
 
-        for line in data:
-            pieces = line.split(",")
-
-            if colnames is None:
-                colnames = pieces
-                coltypes = [_COLTYPES.get(c) for c in colnames]
-                coldata = [[] if t is not None else None for t in coltypes]
-            elif not saw_sep:
-                saw_sep = True
-            else:
-                for row, ctype, cdata in zip(pieces, coltypes, coldata):
-                    if ctype is not None:
-                        cdata.append(ctype(row))
+        if colnames is None:
+            colnames = pieces
+            coltypes = [_COLTYPES.get(c) for c in colnames]
+            coldata = [[] if t is not None else None for t in coltypes]
+        elif not saw_sep:
+            saw_sep = True
+        else:
+            for row, ctype, cdata in zip(pieces, coltypes, coldata):
+                if ctype is not None:
+                    cdata.append(ctype(row))
 
     # Postprocess
 
