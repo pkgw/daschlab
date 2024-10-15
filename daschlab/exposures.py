@@ -103,7 +103,7 @@ _COLTYPES = {
     "exptime": maybe_float,
     "expdate": _daschtime_to_isot,
     # "epoch": float,
-    "wcssource": str,
+    "wcssource": lambda s: s.lower(),
     "scandate": _daschtime_to_isot,
     "mosdate": _daschtime_to_isot,
     "centerdist": maybe_float,

@@ -31,7 +31,7 @@ def _query_cutout(
 
     payload = {
         "plate_id": f"{series}{platenum:05d}",
-        "solution_number": solnum,
+        "solution_number": int(solnum),  # `json` will reject `np.int8`
         "center_ra_deg": center.ra.deg,
         "center_dec_deg": center.dec.deg,
     }
