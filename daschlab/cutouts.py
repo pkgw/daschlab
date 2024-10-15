@@ -10,41 +10,46 @@ This module currently has no public API. See:
 - `daschlab.exposures.Exposures.show()`
 """
 
-from urllib.parse import urlencode
+import base64
+import gzip
 
 from astropy.coordinates import SkyCoord
 import requests
 
 
-_API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/cutout.php"
-
-# TODO: this needs to support multiple solutions!! The API isn't aware of
-# multiple exposures at all, right now, so there's nothing this code can do.
+# TODO: genericize
+_API_URL = "https://api.dev.starglass.cfa.harvard.edu/public/dasch/dr7/cutout"
 
 
 def _query_cutout(
     series: str,
     platenum: int,
-    mosnum: int,
+    solnum: int,
     center: SkyCoord,
 ) -> bytes:
-    url = (
-        _API_URL
-        + "?"
-        + urlencode(
-            {
-                "series": series,
-                "platenum": platenum,
-                "mosnum": mosnum,
-                "cra_deg": center.ra.deg,
-                "cdec_deg": center.dec.deg,
-            }
-        )
-    )
+    url = _API_URL
 
-    fits = requests.get(url).content
+    payload = {
+        "plate_id": f"{series}{platenum:05d}",
+        "solution_number": solnum,
+        "center_ra_deg": center.ra.deg,
+        "center_dec_deg": center.dec.deg,
+    }
 
-    if len(fits) < 80:
-        raise Exception("cutout query failed (plate may not be scanned and WCS-solved)")
+    # Due to how the AWS APIs work, the return of this API must be JSON content.
+    # So, it returns a single JSON string, which is a base64 encoding of the a
+    # gzipped FITS file.
 
-    return fits
+    with requests.post(url, json=payload) as resp:
+        result = resp.json()
+
+        if not isinstance(result, str):
+            raise Exception(
+                f"cutout API query for {series}{platenum:05d}/{solnum} "
+                f"@ {center} appears to have failed: {result!r}"
+            )
+
+        gzdata = base64.b64decode(result)
+        fitsdata = gzip.decompress(gzdata)
+
+    return fitsdata

@@ -38,7 +38,6 @@ import os
 import re
 import time
 from typing import Dict, Iterable, Optional, Tuple, Union
-from urllib.parse import urlencode
 import warnings
 
 from astropy.coordinates import Angle, SkyCoord
@@ -60,7 +59,8 @@ from .series import SERIES, SeriesKind
 __all__ = ["Exposures", "ExposureReferenceType", "ExposureRow", "ExposureSelector"]
 
 
-_API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/queryplates.php"  # TODO: rename
+# TODO: genericize
+_API_URL = "https://api.dev.starglass.cfa.harvard.edu/public/dasch/dr7/queryexps"
 
 
 def _daschtime_to_isot(t: str) -> str:
@@ -84,6 +84,12 @@ def _parse_plate_name(name: str) -> Tuple[str, int]:
     return series, platenum
 
 
+def maybe_float(s: str) -> float:
+    if s:
+        return float(s)
+    return np.nan
+
+
 _COLTYPES = {
     "series": str,
     "platenum": int,
@@ -92,18 +98,16 @@ _COLTYPES = {
     "expnum": int,
     "solnum": int,
     "class": str,
-    "ra": float,
-    "dec": float,
-    "exptime": float,
-    "jd": float,
+    "ra": maybe_float,
+    "dec": maybe_float,
+    "exptime": maybe_float,
+    "expdate": _daschtime_to_isot,
     # "epoch": float,
     "wcssource": str,
     "scandate": _daschtime_to_isot,
     "mosdate": _daschtime_to_isot,
-    "rotation": int,
-    "binflags": int,
-    "centerdist": float,
-    "edgedist": float,
+    "centerdist": maybe_float,
+    "edgedist": maybe_float,
 }
 
 
@@ -1027,7 +1031,6 @@ class Exposures(Table):
         del elc["pos"]
 
         DEL_COLS = [
-            "binflags",
             "local_id",
             "mos_date",
             "scannum",
@@ -1071,39 +1074,34 @@ class Exposures(Table):
 
 def _query_exposures(
     center: SkyCoord,
-    radius: u.Quantity,
 ) -> Exposures:
-    return _postproc_exposures(_get_exposure_cols(center, radius))
+    return _postproc_exposures(_get_exposure_cols(center))
 
 
 def _get_exposure_cols(
     center: SkyCoord,
-    radius: u.Quantity,
 ) -> Exposures:
-    radius = Angle(radius)
-
     # API-based query
 
-    url = (
-        _API_URL
-        + "?"
-        + urlencode(
-            {
-                "cra_deg": center.ra.deg,
-                "cdec_deg": center.dec.deg,
-                "radius_arcsec": radius.arcsec,
-            }
-        )
-    )
+    url = _API_URL
+
+    payload = {
+        "ra_deg": center.ra.deg,
+        "dec_deg": center.dec.deg,
+    }
 
     colnames = None
     coltypes = None
     coldata = None
 
-    with requests.get(url, stream=True) as resp:
-        for line in resp.iter_lines():
-            line = line.decode("utf-8")
-            pieces = line.rstrip().split("\t")
+    with requests.post(url, json=payload) as resp:
+        # Would be nice to stream the response, but we have to decode it as JSON
+        # in the end anyway. For this API, the response is a list of strings,
+        # each giving one line of CSV output.
+        data = resp.json()
+
+        for line in data:
+            pieces = line.split(",")
 
             if colnames is None:
                 colnames = pieces
@@ -1124,11 +1122,30 @@ def _dasch_date_as_datetime(date: str) -> Optional[datetime]:
     if not date:
         return None
 
-    p = date.split("T")
-    p[1] = p[1].replace("-", ":")
-    naive = datetime.fromisoformat("T".join(p))
-    tz = timezone("US/Eastern")
-    return tz.localize(naive)
+    if date.endswith(":60.0"):
+        # Work around timestamp formatting bug in the legacy exposure data table
+        date = date[:-4] + "59.9"
+
+    if date.endswith(":60.0Z"):
+        date = date[:-5] + "59.9Z"
+
+    if date.endswith("Z"):
+        # expdates are UTC and labeled as such; but Python < 3.11 can't
+        # parse the Z extension without help(!)
+        date = date[:-1] + "+00:00"
+
+    try:
+        dt = datetime.fromisoformat(date)
+    except Exception as e:
+        raise Exception(f"failed to parse ISO8601 'T' format {date!r}") from e
+
+    if dt.tzinfo is None:
+        # scandates, etc. have no associated timezone info; but we know
+        # that all of these are in this timezone:
+        tz = timezone("US/Eastern")
+        dt = tz.localize(dt)
+
+    return dt
 
 
 def _dasch_dates_as_time_array(dates) -> Time:
@@ -1181,12 +1198,10 @@ def _postproc_exposures(input_cols) -> Exposures:
     table["solnum"] = smc("solnum", np.int8)
     table["class"] = input_cols["class"]
     table["exptime"] = np.array(input_cols["exptime"], dtype=np.float32) * u.minute
-    table["obs_date"] = Time(input_cols["jd"], format="jd")
+    table["obs_date"] = _dasch_dates_as_time_array(input_cols["expdate"])
     table["wcssource"] = input_cols["wcssource"]
     table["scan_date"] = _dasch_dates_as_time_array(input_cols["scandate"])
     table["mos_date"] = _dasch_dates_as_time_array(input_cols["mosdate"])
-    table["rotation_deg"] = smc("rotation", np.int16)
-    table["binflags"] = smc("binflags", np.uint8)
     table["center_distance"] = (
         np.array(input_cols["centerdist"], dtype=np.float32) * u.cm
     )

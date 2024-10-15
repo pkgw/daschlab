@@ -77,8 +77,6 @@ CUTOUT_HALFSIZE: Angle = Angle(600 * u.arcsec)
 # size of such a square's diagonal.
 REFCAT_RADIUS: Angle = Angle(850 * u.arcsec)
 
-PLATES_RADIUS: Angle = Angle(10 * u.arcsec)
-
 
 class InteractiveError(Exception):
     """
@@ -475,7 +473,7 @@ class Session:
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        self._exposures = _query_exposures(self._query.pos_as_skycoord(), PLATES_RADIUS)
+        self._exposures = _query_exposures(self._query.pos_as_skycoord())
         self._exposures.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("exposures.ecsv") as f_new:
@@ -735,9 +733,8 @@ class Session:
         center = self.query().pos_as_skycoord()
 
         try:
-            # XXXX WE MUST USE SOLNUM
             fits_data = _query_cutout(
-                exp["series"], exp["platenum"], exp["mosnum"], center
+                exp["series"], exp["platenum"], exp["solnum"], center
             )
         except Exception as e:
             # Now that we are better about distinguishing between exposures that
