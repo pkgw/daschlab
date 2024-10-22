@@ -1355,7 +1355,6 @@ def _pdf_export(
 
                 with fits.open(str(sess.path(fits_relpath))) as hdul:
                     data = hdul[0].data
-                    astrom_type = hdul[0].header["D_ASTRTY"]
 
                     if wcs is None:
                         wcs = WCS(hdul[0].header)
@@ -1481,6 +1480,15 @@ def _pdf_export(
             cr.restore()
             linenum += 1.5
 
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.show_text(
+                f"Exposure {exposure.exp_id():>14}: "
+                f"class {plateclass:12} "
+                f"exp {exptime:5.1f} (min) "
+                # f"scale {platescale:7.2f} (arcsec/mm)"
+            )
+            linenum += 1
+
             # XXX hardcoding params
             cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
             cr.show_text(f"Image: center {center_text}")
@@ -1490,17 +1498,7 @@ def _pdf_export(
             linenum += 1
 
             cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
-            cr.show_text(
-                f"Exposure {exposure.exp_id():>14}: "
-                f"astrom {astrom_type.upper():3} "
-                f"class {plateclass:12} "
-                f"exp {exptime:5.1f} (min) "
-                # f"scale {platescale:7.2f} (arcsec/mm)"
-            )
-            linenum += 1
-
-            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
-            url = f"http://dasch.rc.fas.harvard.edu/showplate.php?series={series}&plateNumber={platenum}"
+            url = f"https://starglass.cfa.harvard.edu/plate/{series}{platenum:05d}"
             cr.tag_begin(cairo.TAG_LINK, f"uri='{url}'")
             cr.set_source_rgb(0, 0, 1)
             cr.show_text(url)
@@ -1528,5 +1526,5 @@ def _pdf_export(
     elapsed = time.time() - t0
     info = os.stat(pdfpath)
     print(
-        f"... completed in {elapsed:.0f} seconds and saved to `{pdfpath}` ({info.st_size / 1024**2:.1f} MiB)"
+        f"... completed in {elapsed:.0f} seconds and saved {n_pages} pages to `{pdfpath}` ({info.st_size / 1024**2:.1f} MiB)"
     )
