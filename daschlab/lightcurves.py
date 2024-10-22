@@ -84,8 +84,8 @@ from astropy import units as u
 from astropy.utils.masked import Masked
 from bokeh.plotting import figure, show
 import numpy as np
-import requests
 
+from .apiclient import ApiClient
 from .series import SERIES, SeriesKind
 
 __all__ = [
@@ -98,9 +98,6 @@ __all__ = [
     "PlateQualityFlags",
     "merge",
 ]
-
-
-_API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/querylc.php"
 
 
 _COLTYPES = {
@@ -1741,52 +1738,42 @@ class Lightcurve(TimeSeries):
 
 
 def _query_lc(
+    client: ApiClient,
     refcat: str,
-    name: str,
-    gsc_bin_index: int,
+    ref_number: int,
 ) -> Lightcurve:
-    return _postproc_lc(_get_lc_cols(refcat, name, gsc_bin_index))
+    return _postproc_lc(_get_lc_cols(client, refcat, ref_number))
 
 
 def _get_lc_cols(
+    client: ApiClient,
     refcat: str,
-    name: str,
-    gsc_bin_index: int,
+    ref_number: int,
 ) -> dict:
-    url = (
-        _API_URL
-        + "?"
-        + urlencode(
-            {
-                "refcat": refcat,
-                "name": name,
-                "gsc_bin_index": gsc_bin_index,
-            }
-        )
-    )
+    payload = {
+        "refcat": refcat,
+        "_ref_number": int(ref_number),  # `json` will reject `np.uint64`
+    }
+
+    data = client.invoke("lightcurve", payload)
 
     colnames = None
     coltypes = None
     coldata = None
-    saw_sep = False
 
-    with requests.get(url, stream=True) as resp:
-        for line in resp.iter_lines():
-            line = line.decode("utf-8")
-            pieces = line.rstrip().split("\t")
+    for line in data:
+        pieces = line.split(",")
 
-            if colnames is None:
-                colnames = pieces
-                coltypes = [_COLTYPES.get(c) for c in colnames]
-                coldata = [[] if t is not None else None for t in coltypes]
-            elif not saw_sep:
-                saw_sep = True
-            else:
-                for row, ctype, cdata in zip(pieces, coltypes, coldata):
-                    if ctype is not None:
-                        cdata.append(ctype(row))
+        if colnames is None:
+            colnames = pieces
+            coltypes = [_COLTYPES.get(c) for c in colnames]
+            coldata = [[] if t is not None else None for t in coltypes]
+        else:
+            for row, ctype, cdata in zip(pieces, coltypes, coldata):
+                if ctype is not None:
+                    cdata.append(ctype(row))
 
-    if colnames is None or not saw_sep:
+    if colnames is None:
         raise Exception("incomplete lightcurve data response")
 
     return dict(t for t in zip(colnames, coldata) if t[1] is not None)

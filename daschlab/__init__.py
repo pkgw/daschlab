@@ -578,7 +578,7 @@ class Session:
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        lc = _query_lc(src["refcat"], name, src["gsc_bin_index"])
+        lc = _query_lc(self._apiclient, src["refcat"], src["ref_number"])
 
         # Cross-match with the exposures. We can assume that these are ones with
         # imaging, since those are the only ones that can yield photometry.
