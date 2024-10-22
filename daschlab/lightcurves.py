@@ -102,70 +102,70 @@ __all__ = [
 
 _COLTYPES = {
     # "REFNumber": int,
-    "X_IMAGE": float,
-    "Y_IMAGE": float,
-    "MAG_ISO": float,
-    "ra": float,
-    "dec": float,
+    "x_image": float,
+    "y_image": float,
+    "mag_iso": float,
+    "ra_deg": float,
+    "dec_deg": float,
     "magcal_iso": float,
     "magcal_iso_rms": float,
     "magcal_local": float,
     "magcal_local_rms": float,
-    "Date": float,
-    "FLUX_ISO": float,
-    "MAG_APER": float,
-    "MAG_AUTO": float,
-    "KRON_RADIUS": float,
-    "BACKGROUND": float,
-    "FLUX_MAX": float,
-    "THETA_J2000": float,
-    "ELLIPTICITY": float,
-    "ISOAREA_WORLD": float,
-    "FWHM_IMAGE": float,
-    "FWHM_WORLD": float,
-    "plate_dist": float,
-    "Blendedmag": float,
+    "date_jd": float,
+    "flux_iso": float,
+    "mag_aper": float,
+    "mag_auto": float,
+    "kron_radius": float,
+    "background": float,
+    "flux_max_adu": float,
+    "theta_j2000": float,
+    "ellipticity": float,
+    "iso_area_sqdeg": float,
+    "fwhm_pix": float,
+    "fwhm_deg": float,
+    "plate_center_dist_deg": float,
+    "blended_mag": float,
     "limiting_mag_local": float,
     "magcal_local_error": float,
-    "dradRMS2": float,
+    "drad_rms2": float,
     "magcor_local": float,
     "extinction": float,
     "gsc_bin_index": int,
     "series": str,
-    "plateNumber": int,
-    "NUMBER": int,
-    "versionId": int,
-    "AFLAGS": int,
-    "BFLAGS": int,
-    "ISO0": int,
-    "ISO1": int,
-    "ISO2": int,
-    "ISO3": int,
-    "ISO4": int,
-    "ISO5": int,
-    "ISO6": int,
-    "ISO7": int,
+    "plate_number": int,
+    "sextractor_number": int,
+    "version_id": int,
+    "aflags": int,
+    "bflags": int,
+    "iso_area_0": int,
+    "iso_area_1": int,
+    "iso_area_2": int,
+    "iso_area_3": int,
+    "iso_area_4": int,
+    "iso_area_5": int,
+    "iso_area_6": int,
+    "iso_area_7": int,
     "npoints_local": int,
-    "rejectFlag": int,
+    "reject_flag": int,
     "local_bin_index": int,
-    "seriesId": int,
-    "exposureNumber": int,
-    "solutionNumber": int,
+    "series_id": int,
+    "exposure_number": int,
+    "solution_number": int,
     "spatial_bin": int,
-    "mosaicNumber": int,
+    "mosaic_number": int,
     "quality": int,
     "plateVersionId": int,
     "magdep_bin": int,
     "magcal_magdep": float,
     "magcal_magdep_rms": float,
-    "ra_2": float,
-    "dec_2": float,
-    "RaPM": float,
-    "DecPM": float,
-    "A2FLAGS": int,
-    "B2FLAGS": int,
-    "timeAccuracy": float,
-    "maskIndex": int,
+    "ra_cat_corrected": float,
+    "dec_cat_corrected": float,
+    "pm_ra_masyr": float,
+    "pm_dec_masyr": float,
+    "a2flags": int,
+    "b2flags": int,
+    "time_accuracy_days": float,
+    "mask_index": int,
     # "catalogNumber": int,
 }
 
@@ -1783,7 +1783,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     table = Lightcurve(masked=True)
 
     gsc_bin_index = np.array(input_cols["gsc_bin_index"], dtype=np.uint32)
-    sxt_number = np.array(input_cols["NUMBER"], dtype=np.uint32)
+    sxt_number = np.array(input_cols["sextractor_number"], dtype=np.uint32)
     mask = (gsc_bin_index == 0) & (sxt_number == 0)
 
     # create a unitless (non-Quantity) column, unmasked:
@@ -1820,7 +1820,7 @@ def _postproc_lc(input_cols) -> Lightcurve:
     # so we try to register the most important ones first.
 
     # this must be the first column:
-    table["time"] = Time(input_cols["Date"], format="jd")
+    table["time"] = Time(input_cols["date_jd"], format="jd")
     # this will be filled in for real at the end:
     table["local_id"] = np.zeros(len(gsc_bin_index))
     table["magcal_magdep"] = mq("magcal_magdep", np.float32, u.mag)
@@ -1833,31 +1833,31 @@ def _postproc_lc(input_cols) -> Lightcurve:
     mask_nans[mask] = np.nan
 
     table["pos"] = SkyCoord(
-        ra=(input_cols["ra"] + mask_nans) * u.deg,
-        dec=(input_cols["dec"] + mask_nans) * u.deg,
+        ra=(input_cols["ra_deg"] + mask_nans) * u.deg,
+        dec=(input_cols["dec_deg"] + mask_nans) * u.deg,
         frame="icrs",
     )
 
-    table["fwhm_world"] = mq("FWHM_WORLD", np.float32, u.deg)
-    table["ellipticity"] = mc("ELLIPTICITY", np.float32)
-    table["theta_j2000"] = mq("THETA_J2000", np.float32, u.deg)
-    table["iso_area_world"] = mq("ISOAREA_WORLD", np.float32, u.deg**2)
+    table["fwhm_world"] = mq("fwhm_deg", np.float32, u.deg)
+    table["ellipticity"] = mc("ellipticity", np.float32)
+    table["theta_j2000"] = mq("theta_j2000", np.float32, u.deg)
+    table["iso_area_world"] = mq("iso_area_sqdeg", np.float32, u.deg**2)
 
-    table["aflags"] = mc("AFLAGS", np.uint32)
-    table["bflags"] = mc("BFLAGS", np.uint32)
-    table["plate_quality_flag"] = all_c("quality", np.uint32)
-    table["local_bin_reject_flag"] = mc("rejectFlag", np.uint32)
+    table["aflags"] = mc("aflags", np.uint32)
+    table["bflags"] = mc("bflags", np.uint32)
+    # table["plate_quality_flag"] = all_c("quality", np.uint32)
+    table["local_bin_reject_flag"] = mc("reject_flag", np.uint32)
 
     table["series"] = input_cols["series"]
-    table["platenum"] = all_c("plateNumber", np.uint32)
-    table["mosnum"] = all_c("mosaicNumber", np.uint8)
-    table["solnum"] = all_c("solutionNumber", np.uint8)
-    table["expnum"] = all_c("exposureNumber", np.int8)
+    table["platenum"] = all_c("plate_number", np.uint32)
+    table["mosnum"] = all_c("mosaic_number", np.uint8)
+    table["solnum"] = all_c("solution_number", np.uint8)
+    table["expnum"] = all_c("exposure_number", np.int8)
 
     # Astrometry: image-level
 
-    table["image_x"] = mq("X_IMAGE", np.float32, u.pixel)
-    table["image_y"] = mq("Y_IMAGE", np.float32, u.pixel)
+    table["image_x"] = mq("x_image", np.float32, u.pixel)
+    table["image_y"] = mq("y_image", np.float32, u.pixel)
 
     # Photometry: calibrated
 
@@ -1871,12 +1871,12 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
     # Photometry: calibration/quality information
 
-    table["drad_rms2"] = extra_mq("dradRMS2", np.float32, u.arcsec, 99.0)
+    table["drad_rms2"] = extra_mq("drad_rms2", np.float32, u.arcsec, 99.0)
     table["extinction"] = mq("extinction", np.float32, u.mag)
     table["magcor_local"] = extra_mq("magcor_local", np.float32, u.mag, 0.0)
-    table["blended_mag"] = extra_mq("Blendedmag", np.float32, u.mag, 0.0, 99.0)
-    table["a2flags"] = mc("A2FLAGS", np.uint32)
-    table["b2flags"] = mc("B2FLAGS", np.uint32)
+    table["blended_mag"] = extra_mq("blended_mag", np.float32, u.mag, 0.0, 99.0)
+    table["a2flags"] = mc("a2flags", np.uint32)
+    table["b2flags"] = mc("b2flags", np.uint32)
     table["npoints_local"] = mc("npoints_local", np.uint32)
     table["local_bin_index"] = mc("local_bin_index", np.uint16)
     table["spatial_bin"] = mc("spatial_bin", np.uint16)
@@ -1884,46 +1884,46 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
     # Photometry: image-level
 
-    table["mag_iso"] = mq("MAG_ISO", np.float32, u.mag)
-    table["mag_aper"] = mq("MAG_APER", np.float32, u.mag)
-    table["mag_auto"] = mq("MAG_AUTO", np.float32, u.mag)
-    table["flux_iso"] = mc("FLUX_ISO", np.float32)
-    table["background"] = mc("BACKGROUND", np.float32)
-    table["flux_max"] = mc("FLUX_MAX", np.float32)
+    table["mag_iso"] = mq("mag_iso", np.float32, u.mag)
+    table["mag_aper"] = mq("mag_aper", np.float32, u.mag)
+    table["mag_auto"] = mq("mag_auto", np.float32, u.mag)
+    table["flux_iso"] = mc("flux_iso", np.float32)
+    table["background"] = mc("background", np.float32)
+    table["flux_max"] = mc("flux_max_adu", np.float32)
 
     # Morphology: image-level
 
-    table["fwhm_image"] = mq("FWHM_IMAGE", np.float32, u.pixel)
-    table["kron_radius"] = mc("KRON_RADIUS", np.float32)
+    table["fwhm_image"] = mq("fwhm_pix", np.float32, u.pixel)
+    table["kron_radius"] = mc("kron_radius", np.float32)
     # these have units of px^2, but making them a quantity forces them to be floats:
-    table["sxt_iso0"] = mc("ISO0", np.uint32)
-    table["sxt_iso1"] = mc("ISO1", np.uint32)
-    table["sxt_iso2"] = mc("ISO2", np.uint32)
-    table["sxt_iso3"] = mc("ISO3", np.uint32)
-    table["sxt_iso4"] = mc("ISO4", np.uint32)
-    table["sxt_iso5"] = mc("ISO5", np.uint32)
-    table["sxt_iso6"] = mc("ISO6", np.uint32)
-    table["sxt_iso7"] = mc("ISO7", np.uint32)
+    table["sxt_iso0"] = mc("iso_area_0", np.uint32)
+    table["sxt_iso1"] = mc("iso_area_1", np.uint32)
+    table["sxt_iso2"] = mc("iso_area_2", np.uint32)
+    table["sxt_iso3"] = mc("iso_area_3", np.uint32)
+    table["sxt_iso4"] = mc("iso_area_4", np.uint32)
+    table["sxt_iso5"] = mc("iso_area_5", np.uint32)
+    table["sxt_iso6"] = mc("iso_area_6", np.uint32)
+    table["sxt_iso7"] = mc("iso_area_7", np.uint32)
 
     # Timing
 
-    table["time_accuracy"] = mq("timeAccuracy", np.float32, u.day)
+    table["time_accuracy"] = mq("time_accuracy_days", np.float32, u.day)
 
     # Information about the associated catalog source
 
-    table["catalog_ra"] = extra_mq("ra_2", np.float32, u.deg, 999.0)
-    table["catalog_dec"] = extra_mq("dec_2", np.float32, u.deg, 99.0)
-    table["pm_ra_cosdec"] = extra_mq("RaPM", np.float32, u.mas / u.yr, 999999.0)
-    table["pm_dec"] = extra_mq("DecPM", np.float32, u.mas / u.yr, 999999.0)
+    table["catalog_ra"] = extra_mq("ra_cat_corrected", np.float32, u.deg, 999.0)
+    table["catalog_dec"] = extra_mq("dec_cat_corrected", np.float32, u.deg, 99.0)
+    table["pm_ra_cosdec"] = extra_mq("pm_ra_masyr", np.float32, u.mas / u.yr, 999999.0)
+    table["pm_dec"] = extra_mq("pm_dec_masyr", np.float32, u.mas / u.yr, 999999.0)
 
     # Information about the associated plate
 
-    table["series_id"] = all_c("seriesId", np.uint8)
-    table["plate_dist"] = mq("plate_dist", np.float32, u.deg)
+    table["series_id"] = all_c("series_id", np.uint8)
+    table["plate_dist"] = mq("plate_center_dist_deg", np.float32, u.deg)
 
     # SExtractor supporting info
 
-    table["sxt_number"] = mc("NUMBER", np.uint32)
+    table["sxt_number"] = mc("sextractor_number", np.uint32)
 
     # This depends on the dec, and could vary over time with the right proper motion
 
@@ -1931,9 +1931,9 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
     # DASCH supporting info
 
-    table["dasch_photdb_version_id"] = all_c("versionId", np.uint16)
-    table["dasch_plate_version_id"] = all_c("plateVersionId", np.uint16)
-    table["dasch_mask_index"] = all_c("maskIndex", np.uint8)
+    table["dasch_photdb_version_id"] = all_c("version_id", np.uint16)
+    # table["dasch_plate_version_id"] = all_c("plateVersionId", np.uint16)
+    table["dasch_mask_index"] = all_c("mask_index", np.uint8)
 
     table.sort(["time"])
 
