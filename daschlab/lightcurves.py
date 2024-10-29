@@ -100,73 +100,84 @@ __all__ = [
 ]
 
 
+def maybe_float(s: str) -> float:
+    if s:
+        return float(s)
+    return np.nan
+
+
+def maybe_int(s: str, default: int = 0) -> int:
+    if s:
+        return int(s)
+    return default
+
+
 _COLTYPES = {
     # "REFNumber": int,
-    "x_image": float,
-    "y_image": float,
-    "mag_iso": float,
-    "ra_deg": float,
-    "dec_deg": float,
-    "magcal_iso": float,
-    "magcal_iso_rms": float,
-    "magcal_local": float,
-    "magcal_local_rms": float,
+    "x_image": maybe_float,
+    "y_image": maybe_float,
+    "mag_iso": maybe_float,
+    "ra_deg": maybe_float,
+    "dec_deg": maybe_float,
+    "magcal_iso": maybe_float,
+    "magcal_iso_rms": maybe_float,
+    "magcal_local": maybe_float,
+    "magcal_local_rms": maybe_float,
     "date_jd": float,
-    "flux_iso": float,
-    "mag_aper": float,
-    "mag_auto": float,
-    "kron_radius": float,
-    "background": float,
-    "flux_max_adu": float,
-    "theta_j2000": float,
-    "ellipticity": float,
-    "iso_area_sqdeg": float,
-    "fwhm_pix": float,
-    "fwhm_deg": float,
-    "plate_center_dist_deg": float,
-    "blended_mag": float,
+    "flux_iso": maybe_float,
+    "mag_aper": maybe_float,
+    "mag_auto": maybe_float,
+    "kron_radius": maybe_float,
+    "background": maybe_float,
+    "flux_max_adu": maybe_float,
+    "theta_j2000": maybe_float,
+    "ellipticity": maybe_float,
+    "iso_area_sqdeg": maybe_float,
+    "fwhm_pix": maybe_float,
+    "fwhm_deg": maybe_float,
+    "plate_center_dist_deg": maybe_float,
+    "blended_mag": maybe_float,
     "limiting_mag_local": float,
-    "magcal_local_error": float,
-    "drad_rms2": float,
-    "magcor_local": float,
-    "extinction": float,
-    "gsc_bin_index": int,
+    "magcal_local_error": maybe_float,
+    "drad_rms2": maybe_float,
+    "magcor_local": maybe_float,
+    "extinction": maybe_float,
+    "gsc_bin_index": maybe_int,
     "series": str,
     "plate_number": int,
-    "sextractor_number": int,
-    "version_id": int,
-    "aflags": int,
-    "bflags": int,
-    "iso_area_0": int,
-    "iso_area_1": int,
-    "iso_area_2": int,
-    "iso_area_3": int,
-    "iso_area_4": int,
-    "iso_area_5": int,
-    "iso_area_6": int,
-    "iso_area_7": int,
-    "npoints_local": int,
-    "reject_flag": int,
-    "local_bin_index": int,
-    "series_id": int,
-    "exposure_number": int,
+    "sextractor_number": maybe_int,
+    "version_id": maybe_int,
+    "aflags": maybe_int,
+    "bflags": maybe_int,
+    "iso_area_0": maybe_int,
+    "iso_area_1": maybe_int,
+    "iso_area_2": maybe_int,
+    "iso_area_3": maybe_int,
+    "iso_area_4": maybe_int,
+    "iso_area_5": maybe_int,
+    "iso_area_6": maybe_int,
+    "iso_area_7": maybe_int,
+    "npoints_local": maybe_int,
+    "reject_flag": maybe_int,
+    "local_bin_index": maybe_int,
+    "exposure_number": maybe_int,
     "solution_number": int,
-    "spatial_bin": int,
+    "spatial_bin": maybe_int,
     "mosaic_number": int,
-    "quality": int,
-    "plateVersionId": int,
-    "magdep_bin": int,
-    "magcal_magdep": float,
-    "magcal_magdep_rms": float,
-    "ra_cat_corrected": float,
-    "dec_cat_corrected": float,
-    "pm_ra_masyr": float,
-    "pm_dec_masyr": float,
-    "a2flags": int,
-    "b2flags": int,
-    "time_accuracy_days": float,
-    "mask_index": int,
-    # "catalogNumber": int,
+    "quality": maybe_int,
+    "plateVersionId": maybe_int,
+    "magdep_bin": maybe_int,
+    "magcal_magdep": maybe_float,
+    "magcal_magdep_rms": maybe_float,
+    "ra_cat_corrected": maybe_float,
+    "dec_cat_corrected": maybe_float,
+    "pm_ra_masyr": maybe_float,
+    "pm_dec_masyr": maybe_float,
+    "a2flags": maybe_int,
+    "b2flags": maybe_int,
+    "time_accuracy_days": maybe_float,
+    "mask_index": maybe_int,
+    # "catalogNumber": maybe_int,
 }
 
 
@@ -1718,7 +1729,6 @@ class Lightcurve(TimeSeries):
             "magcal_magdep_rms",
             "magdep_bin",
             "exp_local_id",
-            "series_id",
             "spatial_bin",
             "sxt_iso0",
             "sxt_iso1",
@@ -1740,19 +1750,22 @@ class Lightcurve(TimeSeries):
 def _query_lc(
     client: ApiClient,
     refcat: str,
+    gsc_bin_index: int,
     ref_number: int,
 ) -> Lightcurve:
-    return _postproc_lc(_get_lc_cols(client, refcat, ref_number))
+    return _postproc_lc(_get_lc_cols(client, refcat, gsc_bin_index, ref_number))
 
 
 def _get_lc_cols(
     client: ApiClient,
     refcat: str,
+    gsc_bin_index: int,
     ref_number: int,
 ) -> dict:
     payload = {
         "refcat": refcat,
-        "_ref_number": int(ref_number),  # `json` will reject `np.uint64`
+        "gsc_bin_index": int(gsc_bin_index),  # `json` will reject `np.uint64`
+        "ref_number": int(ref_number),
     }
 
     data = client.invoke("lightcurve", payload)
@@ -1918,7 +1931,6 @@ def _postproc_lc(input_cols) -> Lightcurve:
 
     # Information about the associated plate
 
-    table["series_id"] = all_c("series_id", np.uint8)
     table["plate_dist"] = mq("plate_center_dist_deg", np.float32, u.deg)
 
     # SExtractor supporting info
