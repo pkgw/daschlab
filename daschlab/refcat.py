@@ -25,24 +25,31 @@ from .apiclient import ApiClient
 __all__ = ["RefcatSources", "RefcatSourceRow", "SourceReferenceType"]
 
 
+def maybe_int(s: str, default: int = 0) -> int:
+    if s:
+        return int(s)
+    return default
+
+
 _COLTYPES = {
     "ref_text": str,
     "ref_number": int,
-    "gscBinIndex": int,
-    "raDeg": float,
-    "decDeg": float,
-    "draAsec": float,
-    "ddecAsec": float,
-    "posEpoch": float,
-    "pmRaMasyr": float,
-    "pmDecMasyr": float,
-    "uPMRaMasyr": float,
-    "uPMDecMasyr": float,
+    "gsc_bin_index": int,
+    "ra_deg": float,
+    "dec_deg": float,
+    "dra_asec": float,
+    "ddec_asec": float,
+    "pos_epoch": float,
+    "pm_ra_masyr": float,
+    "pm_dec_masyr": float,
+    "u_pm_ra_masyr": float,
+    "u_pm_dec_masyr": float,
     "stdmag": float,
     "color": float,
-    "vFlag": int,
-    "magFlag": int,
     "class": int,
+    "v_flag": int,
+    "mag_flag": int,
+    "num_matches": maybe_int,
 }
 
 
@@ -202,22 +209,22 @@ def _query_refcat(
     table = RefcatSources(masked=True)
     table["ref_text"] = input_cols["ref_text"]
     table["ref_number"] = np.array(input_cols["ref_number"], dtype=np.uint64)
-    table["gsc_bin_index"] = np.array(input_cols["gscBinIndex"], dtype=np.uint32)
+    table["gsc_bin_index"] = np.array(input_cols["gsc_bin_index"], dtype=np.uint32)
     table["pos"] = SkyCoord(
-        ra=input_cols["raDeg"] * u.deg,
-        dec=input_cols["decDeg"] * u.deg,
-        pm_ra_cosdec=input_cols["pmRaMasyr"] * u.mas / u.yr,
-        pm_dec=input_cols["pmDecMasyr"] * u.mas / u.yr,
-        obstime=Time(input_cols["posEpoch"], format="jyear"),
+        ra=input_cols["ra_deg"] * u.deg,
+        dec=input_cols["dec_deg"] * u.deg,
+        pm_ra_cosdec=input_cols["pm_ra_masyr"] * u.mas / u.yr,
+        pm_dec=input_cols["pm_dec_masyr"] * u.mas / u.yr,
+        obstime=Time(input_cols["pos_epoch"], format="jyear"),
         frame="icrs",
     )
-    table["dra"] = np.array(input_cols["draAsec"], dtype=np.float32) * u.arcsec
-    table["ddec"] = np.array(input_cols["ddecAsec"], dtype=np.float32) * u.arcsec
+    table["dra"] = np.array(input_cols["dra_asec"], dtype=np.float32) * u.arcsec
+    table["ddec"] = np.array(input_cols["ddec_asec"], dtype=np.float32) * u.arcsec
     table["u_pm_ra_cosdec"] = (
-        np.array(input_cols["uPMRaMasyr"], dtype=np.float32) * u.mas / u.yr
+        np.array(input_cols["u_pm_ra_masyr"], dtype=np.float32) * u.mas / u.yr
     )
     table["u_pm_dec"] = (
-        np.array(input_cols["uPMDecMasyr"], dtype=np.float32) * u.mas / u.yr
+        np.array(input_cols["u_pm_dec_masyr"], dtype=np.float32) * u.mas / u.yr
     )
 
     stdmag = np.array(input_cols["stdmag"], dtype=np.float32)
@@ -226,9 +233,10 @@ def _query_refcat(
     color = np.array(input_cols["color"], dtype=np.float32)
     table["color"] = Masked(u.Quantity(color, u.mag), color >= 99)
 
-    table["vFlag"] = np.array(input_cols["vFlag"], dtype=np.uint16)
-    table["magFlag"] = np.array(input_cols["magFlag"], dtype=np.uint16)
+    table["v_flag"] = np.array(input_cols["v_flag"], dtype=np.uint16)
+    table["mag_flag"] = np.array(input_cols["mag_flag"], dtype=np.uint16)
     table["class"] = np.array(input_cols["class"], dtype=np.uint16)
+    table["num_matches"] = np.array(input_cols["num_matches"], dtype=np.uint32)
     table["refcat"] = [name] * len(input_cols["ref_text"])
 
     # Sort by distance from the query point. I believe that we need to use a
