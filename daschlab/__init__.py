@@ -278,14 +278,29 @@ class Session:
         """
         return self._root.joinpath(*pieces)
 
-    def select_target(self, name: str = None) -> "Session":
+    def select_target(
+        self,
+        name: Optional[str] = None,
+        ra_deg: Optional[float] = None,
+        dec_deg: Optional[float] = None,
+        coords: Optional[SkyCoord] = None,
+    ) -> "Session":
         """
         Specify the center of the session's target area.
 
         Parameters
         ==========
-        name : `str`
-          The Simbad-resolvable name of this session's target area.
+        name : optional `str`
+          If specified, target this session based on the given Simbad-resolvable
+          source name.
+        ra_deg : optional `float`
+          If specified, target this session based on given equatorial right
+          ascension and declination, both measured in degrees.
+        dec_deg : optional `float`
+          Companion to the *ra_deg* argument.
+        coords : optional `astropy.coordinates.SkyCoord`
+          If specified, target this session based on the given Astropy
+          coordinates, which will be converted to equatorial form.
 
         Returns
         =======
@@ -293,45 +308,72 @@ class Session:
 
         Notes
         =====
-        The first time you call this method for a given session, it will perform
-        a Simbad/Sesame API query to resolve the target name and save the
-        resulting information in a file named ``query.json``. Subsequent calls
-        (i.e., ones made with the ``query.json`` file already existing) will
-        merely check for consistency.
+        There are three ways to identify the session target: a
+        Simbad/Sesame-resolvable name; explicit equatorial (RA/dec) coordinates
+        in degrees; or an Astropy `~astropy.coordinates.SkyCoord` object. You
+        may only provide one form of identification.
+
+        The first time you call this method for a given session, it resolve the
+        target location (potentially making a Simbad/Sesame API call) and save
+        the resulting information in a file named ``query.json``. Subsequent
+        calls (i.e., ones made with the ``query.json`` file already existing)
+        will merely check for consistency.
 
         After calling this method, you may use `~Session.query()` to obtain the
-        cached information about your session’s target. This merely provides the
-        RA and dec.
-
-        This method could easily support queries based on RA/Dec rather than
-        name resolution. If that’s functionality you would like, please consider
-        filing a pull request.
+        cached information about your session’s target. This provides the RA and
+        dec.
         """
-        if not name:
-            raise ValueError("`name` must be specified")
+        has_name = int(bool(name))
+        has_radec = int(ra_deg is not None and dec_deg is not None)
+        has_coords = int(coords is not None)
+
+        if has_name + has_radec + has_coords != 1:
+            raise ValueError(
+                "one of `name`, `coords`, or both `ra_deg` and `dec_deg` must be specified"
+            )
 
         if self._query is not None:
-            if not self._query.name:
-                self._warn(
-                    f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
-                )
-            elif self._query.name != name:
-                raise InteractiveError(
-                    f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
-                )
+            if has_name:
+                if not self._query.name:
+                    self._warn(
+                        f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
+                    )
+                elif self._query.name != name:
+                    raise InteractiveError(
+                        f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
+                    )
+            else:
+                if has_coords:
+                    ra_deg = coords.ra.deg
+                    dec_deg = coords.dec.deg
+
+                if self._query.ra_deg != ra_deg or self._query.dec_deg != dec_deg:
+                    raise InteractiveError(
+                        f"on-disk query target location (RA={self._query.ra_deg}, dec={self._query.dec_deg}) "
+                        f"does not agree with in-code location (RA={ra_deg}, dec={dec_deg})"
+                    )
 
             return self
 
         # First-time invocation; set up the query file
         print("- Querying API ...", flush=True)
-        self._query = SessionQuery.new_from_name(name)
+        nametext = ""
+
+        if has_name:
+            self._query = SessionQuery.new_from_name(name)
+            nametext = f" with name `{name}`"
+        elif has_radec:
+            self._query = SessionQuery.new_from_radec(ra_deg, dec_deg)
+        else:
+            assert has_coords
+            self._query = SessionQuery.new_from_coords(coords)
 
         with self._save_atomic("query.json") as f_new:
             json.dump(self._query.to_dict(), f_new, ensure_ascii=False, indent=2)
             print(file=f_new)  # `json` doesn't do a trailing newline
 
         self._info(
-            f"- Saved `query.json` with name `{name}` resolved to: {_formatsc(self._query.pos_as_skycoord())}"
+            f"- Saved `query.json`{nametext} resolved to: {_formatsc(self._query.pos_as_skycoord())}"
         )
         return self
 
