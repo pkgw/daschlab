@@ -489,7 +489,7 @@ def _report_flags(desc, observed, enumtype, descriptions, ignore_leftover_bits=0
     if not observed:
         return
 
-    accum = 0
+    accum = np.copy(observed).item()
 
     for iflag in enumtype:
         if observed & iflag.value:
@@ -1430,12 +1430,12 @@ class Photometry(Table):
             elc = self.copy(True)
 
         pos_index = list(elc.columns).index("pos")
-        ra_deg = self["pos"].ra.deg
+        ra_deg = elc["pos"].ra.deg
         pos_mask = ~np.isfinite(ra_deg)
         elc.add_columns(
             (
                 np.ma.array(ra_deg, mask=pos_mask),
-                np.ma.array(self["pos"].dec.deg, mask=pos_mask),
+                np.ma.array(elc["pos"].dec.deg, mask=pos_mask),
             ),
             indexes=[pos_index, pos_index],
             names=["ra_deg", "dec_deg"],
@@ -1448,7 +1448,6 @@ class Photometry(Table):
             "b2flags",
             "dasch_mask_index",
             "dasch_photdb_version_id",
-            "dasch_plate_version_id",
             "flux_iso",
             "flux_max",
             "gsc_bin_index",
