@@ -45,6 +45,7 @@ from astropy.io import fits
 from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
+from astropy.utils.masked import Masked
 from astropy.wcs import WCS
 from bokeh.plotting import figure, show
 import cairo
@@ -105,6 +106,8 @@ _COLTYPES = {
     "mosdate": _daschtime_to_isot,
     "centerdist": maybe_float,
     "edgedist": maybe_float,
+    "limMagApass": maybe_float,
+    "limMagAtlas": maybe_float,
 }
 
 
@@ -156,6 +159,35 @@ class ExposureRow(Row):
         exposure.
         """
         return self["wcssource"] == "imwcs"  # same test as in the selector framework
+
+    def has_phot(self) -> bool:
+        """
+        Test whether this exposure has associated photometric data or not.
+
+        Returns
+        =======
+        `bool`
+            True if the exposure has photometry.
+
+        Notes
+        =====
+        The test checks whether this exposure has data in the
+        ``lim_mag_{refcat}`` field, where ``{refcat}`` is the reference catalog
+        being used by this session: either ``apass`` or ``atlas``. If present,
+        this implies that exposure has imaging and that the DASCH photometric
+        calibration pipeline successfully processed this exposure. Exposures
+        that have photometry for one refcat may not have photometry for the
+        other.
+        """
+        sess_refcat = self._table._sess().refcat()["refcat"][0]
+        val = self[
+            f"lim_mag_{sess_refcat}"
+        ]  # this might be a float or a MaskedConstant
+
+        if hasattr(val, "mask"):
+            return not val.mask
+
+        return np.isfinite(val)
 
     def exp_id(self) -> str:
         """
@@ -419,6 +451,41 @@ class ExposureSelector:
         Unfortunately, some of the DASCH WCS solutions are erroneous.
         """
         m = self._exposures["wcssource"] == "imwcs"
+        return self._apply(m, **kwargs)
+
+    def has_phot(self, **kwargs) -> "Exposures":
+        """
+        Act on exposures that were able to be photometrically calibrated.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Exposures`
+            However, different actions may return different types. For instance,
+            the `Exposures.count` action will return an integer.
+
+        Examples
+        ========
+        Count the number of exposures with photometry::
+
+            exp = sess.exposures()
+            n_phot = exp.count.has_phot()
+
+        Notes
+        =====
+        The selector acts on exposures that have data in the
+        ``lim_mag_{refcat}`` field, where ``{refcat}`` is the reference catalog
+        being used by this session: either ``apass`` or ``atlas``. This field is
+        only present for exposures that have imaging and were successfully
+        processed by the DASCH photometric pipeline for that refcat.
+        """
+        sess_refcat = self._exposures._sess().refcat()["refcat"][0]
+        col = self._exposures[f"lim_mag_{sess_refcat}"]
+        m = np.isfinite(col.filled(np.nan))
         return self._apply(m, **kwargs)
 
     def series(self, series: str, **kwargs) -> "Exposures":
@@ -1180,6 +1247,10 @@ def _postproc_exposures(input_cols) -> Exposures:
     # unitless column, masked by scanned status:
     smc = lambda c, dt: np.ma.array(input_cols[c], mask=scanned_mask, dtype=dt)
 
+    def nan_mq(c, dt, unit):
+        a = np.array(input_cols[c], dtype=dt)
+        return Masked(u.Quantity(a, unit), ~np.isfinite(a))
+
     table["series"] = input_cols["series"]
     table["platenum"] = np.array(input_cols["platenum"], dtype=np.uint32)
     table["scannum"] = smc("scannum", np.int8)
@@ -1196,6 +1267,8 @@ def _postproc_exposures(input_cols) -> Exposures:
         np.array(input_cols["centerdist"], dtype=np.float32) * u.cm
     )
     table["edge_distance"] = np.array(input_cols["edgedist"], dtype=np.float32) * u.cm
+    table["lim_mag_apass"] = nan_mq("limMagApass", np.float32, u.mag)
+    table["lim_mag_atlas"] = nan_mq("limMagAtlas", np.float32, u.mag)
 
     # Some exposures are missing position data, flagged with 999/99's.
     ra = np.array(input_cols["ra"])

@@ -72,7 +72,6 @@ that you may need to be careful about selection logic. For instance::
 """
 
 from enum import IntFlag
-from urllib.parse import urlencode
 import sys
 from typing import Dict, List, Optional, Tuple
 
