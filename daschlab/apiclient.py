@@ -18,18 +18,31 @@ import requests
 
 __all__ = ["ApiClient"]
 
+# If you use the AWS development API, `api.dev.starglass.cfa.harvard.edu`,
+# remember that it can only be accessed from a limited range of IP addresses.
+# You'll need to be at the CfA, or logged onto its VPN.
 
-# TODO: genericize!!
-_BASE_URL = "https://api.dev.starglass.cfa.harvard.edu/public/dasch/dr7"
+_URL_ROOT = "https://api.starglass.cfa.harvard.edu"
+_API_VERSION = "dasch/dr7"
 
 
 class ApiClient:
     base_url: str
-    local_program: Optional[str]
-    debug: bool
+    local_program: Optional[str] = None
+    api_key: Optional[str] = None
+    debug: bool = False
 
     def __init__(self):
-        self.base_url = _BASE_URL
+        api_key = os.environ.get("DASCHLAB_API_KEY")
+        if api_key:
+            self.api_key = api_key
+
+        self.base_url = os.environ.get("DASCHLAB_API_BASE_URL")
+
+        if not self.base_url:
+            stage = "registered" if api_key else "public"
+            self.base_url = f"{_URL_ROOT}/{stage}/{_API_VERSION}"
+
         self.local_program = None
         self.debug = False
 
@@ -68,8 +81,12 @@ class ApiClient:
 
     def _invoke_web(self, endpoint: str, payload: dict) -> object:
         url = f"{self.base_url}/{endpoint}"
+        headers = {}
 
-        with requests.post(url, json=payload) as resp:
+        if self.api_key:
+            headers["x-api-key"] = self.api_key
+
+        with requests.post(url, json=payload, headers=headers) as resp:
             return resp.json()
 
     def _invoke_program(self, endpoint: str, payload: dict) -> object:
