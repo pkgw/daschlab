@@ -52,7 +52,7 @@ import cairo
 import numpy as np
 from PIL import Image
 from pytz import timezone
-from pywwt.layers import ImageLayer
+from pywwt.layers import ImageLayer, TableLayer
 
 from .apiclient import ApiClient
 from .series import SERIES, SeriesKind
@@ -1046,6 +1046,38 @@ class Exposures(Table):
         )
         self._layers()[local_id] = il
         return il
+
+    def show_extract(self, exp_ref: ExposureReferenceType) -> TableLayer:
+        """
+        Display the catalog extract of the specified exposure in the WWT view.
+
+        Parameters
+        ==========
+        exp_ref : `ExposureRow` or `int`
+            If this argument is an integer, it is interpreted as the "local ID"
+            of an exposure. Local IDs are assigned in chronological order of
+            observing time, so a value of ``0`` shows the first exposure. This will
+            only work if the selected exposure is scanned and WCS-solved.
+
+            If this argument is an instance of `ExposureRow`, the specified exposure
+            is shown.
+
+        Returns
+        =======
+        `pywwt.layers.TableLayer`
+          This is the WWT table layer object corresponding to the displayed catalog
+          extract. You can use it to programmatically control aspects of how the
+          data are displayed.
+
+        Notes
+        =====
+        In order to use this method, you must first have called
+        `daschlab.Session.connect_to_wwt()`. If needed, this method will execute
+        an API call and download the data to be displayed, which may be slow.
+
+        This method is equivalent to calling ``sess.extract(exp_ref).show()``.
+        """
+        return self._sess().extract(exp_ref).show()
 
     def export(self, path: str, format: str = "csv", drop_rejects: bool = True):
         """
