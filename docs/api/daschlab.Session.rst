@@ -14,6 +14,7 @@ Session
       ~Session.cutout
       ~Session.delete_data
       ~Session.exposures
+      ~Session.extract
       ~Session.lightcurve
       ~Session.merge_lightcurves
       ~Session.path
@@ -29,6 +30,7 @@ Session
    .. automethod:: cutout
    .. automethod:: delete_data
    .. automethod:: exposures
+   .. automethod:: extract
    .. automethod:: lightcurve
    .. automethod:: merge_lightcurves
    .. automethod:: path

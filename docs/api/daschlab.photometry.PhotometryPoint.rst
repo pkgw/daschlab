@@ -1,16 +1,16 @@
-LightcurvePoint
+PhotometryPoint
 ===============
 
-.. currentmodule:: daschlab.lightcurves
+.. currentmodule:: daschlab.photometry
 
-.. autoclass:: LightcurvePoint
+.. autoclass:: PhotometryPoint
    :show-inheritance:
 
    .. rubric:: Methods Summary
 
    .. autosummary::
 
-      ~LightcurvePoint.flags
+      ~PhotometryPoint.flags
 
    .. rubric:: Methods Documentation
 

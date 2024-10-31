@@ -1,7 +1,7 @@
 BFlags
 ======
 
-.. currentmodule:: daschlab.lightcurves
+.. currentmodule:: daschlab.photometry
 
 .. autoclass:: BFlags
    :show-inheritance:

@@ -52,12 +52,13 @@ import astropy.utils.exceptions
 import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
+from .apiclient import ApiClient
 from .query import SessionQuery
 from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
 from .exposures import Exposures, ExposureRow, _query_exposures
 from .lightcurves import Lightcurve, _query_lc
 from .cutouts import _query_cutout
-
+from .extracts import Extract, _query_extract
 
 __all__ = [
     "SUPPORTED_REFCATS",
@@ -76,8 +77,6 @@ CUTOUT_HALFSIZE: Angle = Angle(600 * u.arcsec)
 # In order to get ~all catalog sources on a cutout, the radius should be the
 # size of such a square's diagonal.
 REFCAT_RADIUS: Angle = Angle(850 * u.arcsec)
-
-PLATES_RADIUS: Angle = Angle(10 * u.arcsec)
 
 
 class InteractiveError(Exception):
@@ -152,6 +151,7 @@ class Session:
 
     _root: pathlib.Path
     _interactive: bool = True
+    _apiclient: ApiClient
     _internal_simg: str = ""
     _query: Optional[SessionQuery] = None
     _refcat: Optional[RefcatSources] = None
@@ -159,14 +159,19 @@ class Session:
     _wwt: Optional[WWTJupyterWidget] = None
     _refcat_table_layer: Optional["pywwt.layers.TableLayer"] = None
     _lc_cache: Dict[str, Lightcurve] = None
+    _extract_cache: Dict[str, Extract] = None
     _exposure_image_layer_cache: dict = None
+    _extract_table_layer_cache: Dict[str, "pywwt.layers.TableLayer"] = None
 
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
         self._root = pathlib.Path(root)
         self._interactive = interactive
+        self._apiclient = ApiClient()
         self._internal_simg = _internal_simg
         self._lc_cache = {}
+        self._extract_cache = {}
         self._exposure_image_layer_cache = {}
+        self._extract_table_layer_cache = {}
 
         try:
             self._root.mkdir(parents=True)
@@ -277,14 +282,29 @@ class Session:
         """
         return self._root.joinpath(*pieces)
 
-    def select_target(self, name: str = None) -> "Session":
+    def select_target(
+        self,
+        name: Optional[str] = None,
+        ra_deg: Optional[float] = None,
+        dec_deg: Optional[float] = None,
+        coords: Optional[SkyCoord] = None,
+    ) -> "Session":
         """
         Specify the center of the session's target area.
 
         Parameters
         ==========
-        name : `str`
-          The Simbad-resolvable name of this session's target area.
+        name : optional `str`
+          If specified, target this session based on the given Simbad-resolvable
+          source name.
+        ra_deg : optional `float`
+          If specified, target this session based on given equatorial right
+          ascension and declination, both measured in degrees.
+        dec_deg : optional `float`
+          Companion to the *ra_deg* argument.
+        coords : optional `astropy.coordinates.SkyCoord`
+          If specified, target this session based on the given Astropy
+          coordinates, which will be converted to equatorial form.
 
         Returns
         =======
@@ -292,45 +312,72 @@ class Session:
 
         Notes
         =====
-        The first time you call this method for a given session, it will perform
-        a Simbad/Sesame API query to resolve the target name and save the
-        resulting information in a file named ``query.json``. Subsequent calls
-        (i.e., ones made with the ``query.json`` file already existing) will
-        merely check for consistency.
+        There are three ways to identify the session target: a
+        Simbad/Sesame-resolvable name; explicit equatorial (RA/dec) coordinates
+        in degrees; or an Astropy `~astropy.coordinates.SkyCoord` object. You
+        may only provide one form of identification.
+
+        The first time you call this method for a given session, it resolve the
+        target location (potentially making a Simbad/Sesame API call) and save
+        the resulting information in a file named ``query.json``. Subsequent
+        calls (i.e., ones made with the ``query.json`` file already existing)
+        will merely check for consistency.
 
         After calling this method, you may use `~Session.query()` to obtain the
-        cached information about your session’s target. This merely provides the
-        RA and dec.
-
-        This method could easily support queries based on RA/Dec rather than
-        name resolution. If that’s functionality you would like, please consider
-        filing a pull request.
+        cached information about your session’s target. This provides the RA and
+        dec.
         """
-        if not name:
-            raise ValueError("`name` must be specified")
+        has_name = int(bool(name))
+        has_radec = int(ra_deg is not None and dec_deg is not None)
+        has_coords = int(coords is not None)
+
+        if has_name + has_radec + has_coords != 1:
+            raise ValueError(
+                "one of `name`, `coords`, or both `ra_deg` and `dec_deg` must be specified"
+            )
 
         if self._query is not None:
-            if not self._query.name:
-                self._warn(
-                    f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
-                )
-            elif self._query.name != name:
-                raise InteractiveError(
-                    f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
-                )
+            if has_name:
+                if not self._query.name:
+                    self._warn(
+                        f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
+                    )
+                elif self._query.name != name:
+                    raise InteractiveError(
+                        f"on-disk query target name `{self._query.name}` does not agree with in-code name `{name}`"
+                    )
+            else:
+                if has_coords:
+                    ra_deg = coords.ra.deg
+                    dec_deg = coords.dec.deg
+
+                if self._query.ra_deg != ra_deg or self._query.dec_deg != dec_deg:
+                    raise InteractiveError(
+                        f"on-disk query target location (RA={self._query.ra_deg}, dec={self._query.dec_deg}) "
+                        f"does not agree with in-code location (RA={ra_deg}, dec={dec_deg})"
+                    )
 
             return self
 
         # First-time invocation; set up the query file
         print("- Querying API ...", flush=True)
-        self._query = SessionQuery.new_from_name(name)
+        nametext = ""
+
+        if has_name:
+            self._query = SessionQuery.new_from_name(name)
+            nametext = f" with name `{name}`"
+        elif has_radec:
+            self._query = SessionQuery.new_from_radec(ra_deg, dec_deg)
+        else:
+            assert has_coords
+            self._query = SessionQuery.new_from_coords(coords)
 
         with self._save_atomic("query.json") as f_new:
             json.dump(self._query.to_dict(), f_new, ensure_ascii=False, indent=2)
             print(file=f_new)  # `json` doesn't do a trailing newline
 
         self._info(
-            f"- Saved `query.json` with name `{name}` resolved to: {_formatsc(self._query.pos_as_skycoord())}"
+            f"- Saved `query.json`{nametext} resolved to: {_formatsc(self._query.pos_as_skycoord())}"
         )
         return self
 
@@ -410,7 +457,9 @@ class Session:
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        self._refcat = _query_refcat(name, self._query.pos_as_skycoord(), REFCAT_RADIUS)
+        self._refcat = _query_refcat(
+            self._apiclient, name, self._query.pos_as_skycoord(), REFCAT_RADIUS
+        )
         self._refcat.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("refcat.ecsv") as f_new:
@@ -475,7 +524,9 @@ class Session:
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        self._exposures = _query_exposures(self._query.pos_as_skycoord(), PLATES_RADIUS)
+        self._exposures = _query_exposures(
+            self._apiclient, self._query.pos_as_skycoord()
+        )
         self._exposures.meta["daschlab_sess_key"] = str(self._root)
 
         with self._save_atomic("exposures.ecsv") as f_new:
@@ -573,7 +624,9 @@ class Session:
 
         t0 = time.time()
         print("- Querying API ...", flush=True)
-        lc = _query_lc(src["refcat"], name, src["gsc_bin_index"])
+        lc = _query_lc(
+            self._apiclient, src["refcat"], src["gsc_bin_index"], src["ref_number"]
+        )
 
         # Cross-match with the exposures. We can assume that these are ones with
         # imaging, since those are the only ones that can yield photometry.
@@ -598,6 +651,7 @@ class Session:
         with self._save_atomic(relpath) as f_new:
             lc.write(f_new.name, format="ascii.ecsv", overwrite=True)
 
+        self._lc_cache[name] = lc
         elapsed = time.time() - t0
         self._info(
             f"- Fetched {len(lc)} rows in {elapsed:.0f} seconds and saved as `{self.path(relpath)}`"
@@ -735,9 +789,8 @@ class Session:
         center = self.query().pos_as_skycoord()
 
         try:
-            # XXXX WE MUST USE SOLNUM
             fits_data = _query_cutout(
-                exp["series"], exp["platenum"], exp["mosnum"], center
+                self._apiclient, exp["series"], exp["platenum"], exp["solnum"], center
             )
         except Exception as e:
             # Now that we are better about distinguishing between exposures that
@@ -764,10 +817,9 @@ class Session:
                 # the 'class' column is handled as a masked array and when we convert it
                 # to a row, the masked value seems to become a float64?
                 h["D_PCLASS"] = "" if exp["class"] is np.ma.masked else exp["class"]
-                h["D_ROTFLG"] = exp["rotation_deg"]
                 h["EXPTIME"] = exp["exptime"] * 60
-                h["DATE-OBS"] = exp["obs_date"].fits
-                h["MJD-OBS"] = exp["obs_date"].mjd
+                h["DATE-OBS"] = exp["obs_date"].unmasked.fits
+                h["MJD-OBS"] = exp["obs_date"].unmasked.mjd
                 h["DATE-SCN"] = exp["scan_date"].unmasked.fits
                 h["MJD-SCN"] = exp["scan_date"].unmasked.mjd
                 h["DATE-MOS"] = exp["mos_date"].unmasked.fits
@@ -778,6 +830,84 @@ class Session:
 
         self._info(f"- Saved `{self.path(dest_relpath)}`")
         return dest_relpath
+
+    def extract(self, exp_ref: "ExposureReferenceType") -> Extract:
+        """
+        Obtain an extract of photometric data for the specified exposure.
+
+        Parameters
+        ==========
+        exp_ref : `int` or ...
+
+        Returns
+        =======
+        A `daschlab.extracts.Extract` instance.
+
+        Notes
+        =====
+        You must call `~Session.select_target()` and `~Session.select_refcat()`
+        before calling this method.
+
+        The first time you call this method for a given session, it will perform
+        a DASCH API query to fetch information from the lightcurve database,
+        saving the resulting information in a file inside the session's
+        ``lightcurves`` subdirectory. Subsequent calls (i.e., ones made with the
+        data file already existing) will merely check for consistency and load
+        the saved file.
+        """
+        exp = self._resolve_exposure_reference(exp_ref)
+        plate_id = f"{exp['series']}{exp['platenum']:05d}"
+        exp_id = exp.exp_id()
+        refcat = self._refcat["refcat"][0]
+
+        if not exp.has_phot():
+            self._warn(
+                f"cannot get a photometry extract for exposure {exp_id}: it does not have photometry data (in this refcat)"
+            )
+            return None
+
+        extract = self._extract_cache.get(exp_id)
+        if extract is not None:
+            return extract
+
+        relpath = f"extracts/{exp_id}.ecsv"
+
+        try:
+            extract = Extract.read(str(self.path(relpath)), format="ascii.ecsv")
+            extract.meta["daschlab_sess_key"] = str(self._root)
+            extract.meta["daschlab_exposure_id"] = exp_id
+            self._extract_cache[exp_id] = extract
+            return extract
+        except FileNotFoundError:
+            pass
+
+        # We need to fetch it
+
+        self.path("extracts").mkdir(exist_ok=True)
+
+        t0 = time.time()
+        print("- Querying API ...", flush=True)
+        extract = _query_extract(
+            self._apiclient,
+            refcat,
+            plate_id,
+            exp["solnum"],
+            self._query.pos_as_skycoord(),
+        )
+        extract.meta["daschlab_sess_key"] = str(self._root)
+        extract.meta["daschlab_exposure_id"] = exp_id
+        self._extract_cache[exp_id] = extract
+
+        # All done
+
+        with self._save_atomic(relpath) as f_new:
+            extract.write(f_new.name, format="ascii.ecsv", overwrite=True)
+
+        elapsed = time.time() - t0
+        self._info(
+            f"- Fetched {len(extract)} rows in {elapsed:.0f} seconds and saved as `{self.path(relpath)}`"
+        )
+        return extract
 
     async def connect_to_wwt(self):
         """

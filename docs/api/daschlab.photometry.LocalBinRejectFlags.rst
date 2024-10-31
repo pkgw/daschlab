@@ -1,7 +1,7 @@
 LocalBinRejectFlags
 ===================
 
-.. currentmodule:: daschlab.lightcurves
+.. currentmodule:: daschlab.photometry
 
 .. autoclass:: LocalBinRejectFlags
    :show-inheritance:

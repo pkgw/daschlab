@@ -1,7 +1,7 @@
 AFlags
 ======
 
-.. currentmodule:: daschlab.lightcurves
+.. currentmodule:: daschlab.photometry
 
 .. autoclass:: AFlags
    :show-inheritance:

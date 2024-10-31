@@ -26,6 +26,7 @@ Exposures
       ~Exposures.export_cutouts_to_pdf
       ~Exposures.series_info
       ~Exposures.show
+      ~Exposures.show_extract
       ~Exposures.time_coverage
 
    .. rubric:: Attributes Documentation
@@ -44,4 +45,5 @@ Exposures
    .. automethod:: export_cutouts_to_pdf
    .. automethod:: series_info
    .. automethod:: show
+   .. automethod:: show_extract
    .. automethod:: time_coverage

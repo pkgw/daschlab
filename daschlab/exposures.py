@@ -38,29 +38,27 @@ import os
 import re
 import time
 from typing import Dict, Iterable, Optional, Tuple, Union
-from urllib.parse import urlencode
 import warnings
 
-from astropy.coordinates import Angle, SkyCoord
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table, Row
 from astropy.time import Time
 from astropy import units as u
+from astropy.utils.masked import Masked
 from astropy.wcs import WCS
 from bokeh.plotting import figure, show
 import cairo
 import numpy as np
 from PIL import Image
 from pytz import timezone
-from pywwt.layers import ImageLayer
-import requests
+from pywwt.layers import ImageLayer, TableLayer
 
+from .apiclient import ApiClient
 from .series import SERIES, SeriesKind
 
+
 __all__ = ["Exposures", "ExposureReferenceType", "ExposureRow", "ExposureSelector"]
-
-
-_API_URL = "http://dasch.rc.fas.harvard.edu/_v2api/queryplates.php"  # TODO: rename
 
 
 def _daschtime_to_isot(t: str) -> str:
@@ -84,6 +82,12 @@ def _parse_plate_name(name: str) -> Tuple[str, int]:
     return series, platenum
 
 
+def maybe_float(s: str) -> float:
+    if s:
+        return float(s)
+    return np.nan
+
+
 _COLTYPES = {
     "series": str,
     "platenum": int,
@@ -92,18 +96,18 @@ _COLTYPES = {
     "expnum": int,
     "solnum": int,
     "class": str,
-    "ra": float,
-    "dec": float,
-    "exptime": float,
-    "jd": float,
+    "ra": maybe_float,
+    "dec": maybe_float,
+    "exptime": maybe_float,
+    "expdate": _daschtime_to_isot,
     # "epoch": float,
-    "wcssource": str,
+    "wcssource": lambda s: s.lower(),
     "scandate": _daschtime_to_isot,
     "mosdate": _daschtime_to_isot,
-    "rotation": int,
-    "binflags": int,
-    "centerdist": float,
-    "edgedist": float,
+    "centerdist": maybe_float,
+    "edgedist": maybe_float,
+    "limMagApass": maybe_float,
+    "limMagAtlas": maybe_float,
 }
 
 
@@ -155,6 +159,35 @@ class ExposureRow(Row):
         exposure.
         """
         return self["wcssource"] == "imwcs"  # same test as in the selector framework
+
+    def has_phot(self) -> bool:
+        """
+        Test whether this exposure has associated photometric data or not.
+
+        Returns
+        =======
+        `bool`
+            True if the exposure has photometry.
+
+        Notes
+        =====
+        The test checks whether this exposure has data in the
+        ``lim_mag_{refcat}`` field, where ``{refcat}`` is the reference catalog
+        being used by this session: either ``apass`` or ``atlas``. If present,
+        this implies that exposure has imaging and that the DASCH photometric
+        calibration pipeline successfully processed this exposure. Exposures
+        that have photometry for one refcat may not have photometry for the
+        other.
+        """
+        sess_refcat = self._table._sess().refcat()["refcat"][0]
+        val = self[
+            f"lim_mag_{sess_refcat}"
+        ]  # this might be a float or a MaskedConstant
+
+        if hasattr(val, "mask"):
+            return not val.mask
+
+        return np.isfinite(val)
 
     def exp_id(self) -> str:
         """
@@ -418,6 +451,41 @@ class ExposureSelector:
         Unfortunately, some of the DASCH WCS solutions are erroneous.
         """
         m = self._exposures["wcssource"] == "imwcs"
+        return self._apply(m, **kwargs)
+
+    def has_phot(self, **kwargs) -> "Exposures":
+        """
+        Act on exposures that were able to be photometrically calibrated.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Exposures`
+            However, different actions may return different types. For instance,
+            the `Exposures.count` action will return an integer.
+
+        Examples
+        ========
+        Count the number of exposures with photometry::
+
+            exp = sess.exposures()
+            n_phot = exp.count.has_phot()
+
+        Notes
+        =====
+        The selector acts on exposures that have data in the
+        ``lim_mag_{refcat}`` field, where ``{refcat}`` is the reference catalog
+        being used by this session: either ``apass`` or ``atlas``. This field is
+        only present for exposures that have imaging and were successfully
+        processed by the DASCH photometric pipeline for that refcat.
+        """
+        sess_refcat = self._exposures._sess().refcat()["refcat"][0]
+        col = self._exposures[f"lim_mag_{sess_refcat}"]
+        m = np.isfinite(col.filled(np.nan))
         return self._apply(m, **kwargs)
 
     def series(self, series: str, **kwargs) -> "Exposures":
@@ -979,6 +1047,38 @@ class Exposures(Table):
         self._layers()[local_id] = il
         return il
 
+    def show_extract(self, exp_ref: ExposureReferenceType) -> TableLayer:
+        """
+        Display the catalog extract of the specified exposure in the WWT view.
+
+        Parameters
+        ==========
+        exp_ref : `ExposureRow` or `int`
+            If this argument is an integer, it is interpreted as the "local ID"
+            of an exposure. Local IDs are assigned in chronological order of
+            observing time, so a value of ``0`` shows the first exposure. This will
+            only work if the selected exposure is scanned and WCS-solved.
+
+            If this argument is an instance of `ExposureRow`, the specified exposure
+            is shown.
+
+        Returns
+        =======
+        `pywwt.layers.TableLayer`
+          This is the WWT table layer object corresponding to the displayed catalog
+          extract. You can use it to programmatically control aspects of how the
+          data are displayed.
+
+        Notes
+        =====
+        In order to use this method, you must first have called
+        `daschlab.Session.connect_to_wwt()`. If needed, this method will execute
+        an API call and download the data to be displayed, which may be slow.
+
+        This method is equivalent to calling ``sess.extract(exp_ref).show()``.
+        """
+        return self._sess().extract(exp_ref).show()
+
     def export(self, path: str, format: str = "csv", drop_rejects: bool = True):
         """
         Save a copy of this exposure list to a file.
@@ -1027,7 +1127,6 @@ class Exposures(Table):
         del elc["pos"]
 
         DEL_COLS = [
-            "binflags",
             "local_id",
             "mos_date",
             "scannum",
@@ -1070,49 +1169,42 @@ class Exposures(Table):
 
 
 def _query_exposures(
+    client: ApiClient,
     center: SkyCoord,
-    radius: u.Quantity,
 ) -> Exposures:
-    return _postproc_exposures(_get_exposure_cols(center, radius))
+    return _postproc_exposures(_get_exposure_cols(client, center))
 
 
 def _get_exposure_cols(
+    client: ApiClient,
     center: SkyCoord,
-    radius: u.Quantity,
 ) -> Exposures:
-    radius = Angle(radius)
-
-    # API-based query
-
-    url = (
-        _API_URL
-        + "?"
-        + urlencode(
-            {
-                "cra_deg": center.ra.deg,
-                "cdec_deg": center.dec.deg,
-                "radius_arcsec": radius.arcsec,
-            }
-        )
-    )
+    payload = {
+        "ra_deg": center.ra.deg,
+        "dec_deg": center.dec.deg,
+    }
 
     colnames = None
     coltypes = None
     coldata = None
 
-    with requests.get(url, stream=True) as resp:
-        for line in resp.iter_lines():
-            line = line.decode("utf-8")
-            pieces = line.rstrip().split("\t")
+    data = client.invoke("queryexps", payload)
+    if not isinstance(data, list):
+        from . import InteractiveError
 
-            if colnames is None:
-                colnames = pieces
-                coltypes = [_COLTYPES.get(c) for c in colnames]
-                coldata = [[] if t is not None else None for t in coltypes]
-            else:
-                for row, ctype, cdata in zip(pieces, coltypes, coldata):
-                    if ctype is not None:
-                        cdata.append(ctype(row))
+        raise InteractiveError(f"queryexps API request failed: {data!r}")
+
+    for line in data:
+        pieces = line.split(",")
+
+        if colnames is None:
+            colnames = pieces
+            coltypes = [_COLTYPES.get(c) for c in colnames]
+            coldata = [[] if t is not None else None for t in coltypes]
+        else:
+            for row, ctype, cdata in zip(pieces, coltypes, coldata):
+                if ctype is not None:
+                    cdata.append(ctype(row))
 
     if colnames is None:
         raise Exception("empty exposure-table data response")
@@ -1124,11 +1216,30 @@ def _dasch_date_as_datetime(date: str) -> Optional[datetime]:
     if not date:
         return None
 
-    p = date.split("T")
-    p[1] = p[1].replace("-", ":")
-    naive = datetime.fromisoformat("T".join(p))
-    tz = timezone("US/Eastern")
-    return tz.localize(naive)
+    if date.endswith(":60.0"):
+        # Work around timestamp formatting bug in the legacy exposure data table
+        date = date[:-4] + "59.9"
+
+    if date.endswith(":60.0Z"):
+        date = date[:-5] + "59.9Z"
+
+    if date.endswith("Z"):
+        # expdates are UTC and labeled as such; but Python < 3.11 can't
+        # parse the Z extension without help(!)
+        date = date[:-1] + "+00:00"
+
+    try:
+        dt = datetime.fromisoformat(date)
+    except Exception as e:
+        raise Exception(f"failed to parse ISO8601 'T' format {date!r}") from e
+
+    if dt.tzinfo is None:
+        # scandates, etc. have no associated timezone info; but we know
+        # that all of these are in this timezone:
+        tz = timezone("US/Eastern")
+        dt = tz.localize(dt)
+
+    return dt
 
 
 def _dasch_dates_as_time_array(dates) -> Time:
@@ -1173,6 +1284,10 @@ def _postproc_exposures(input_cols) -> Exposures:
     # unitless column, masked by scanned status:
     smc = lambda c, dt: np.ma.array(input_cols[c], mask=scanned_mask, dtype=dt)
 
+    def nan_mq(c, dt, unit):
+        a = np.array(input_cols[c], dtype=dt)
+        return Masked(u.Quantity(a, unit), ~np.isfinite(a))
+
     table["series"] = input_cols["series"]
     table["platenum"] = np.array(input_cols["platenum"], dtype=np.uint32)
     table["scannum"] = smc("scannum", np.int8)
@@ -1181,16 +1296,16 @@ def _postproc_exposures(input_cols) -> Exposures:
     table["solnum"] = smc("solnum", np.int8)
     table["class"] = input_cols["class"]
     table["exptime"] = np.array(input_cols["exptime"], dtype=np.float32) * u.minute
-    table["obs_date"] = Time(input_cols["jd"], format="jd")
+    table["obs_date"] = _dasch_dates_as_time_array(input_cols["expdate"])
     table["wcssource"] = input_cols["wcssource"]
     table["scan_date"] = _dasch_dates_as_time_array(input_cols["scandate"])
     table["mos_date"] = _dasch_dates_as_time_array(input_cols["mosdate"])
-    table["rotation_deg"] = smc("rotation", np.int16)
-    table["binflags"] = smc("binflags", np.uint8)
     table["center_distance"] = (
         np.array(input_cols["centerdist"], dtype=np.float32) * u.cm
     )
     table["edge_distance"] = np.array(input_cols["edgedist"], dtype=np.float32) * u.cm
+    table["lim_mag_apass"] = nan_mq("limMagApass", np.float32, u.mag)
+    table["lim_mag_atlas"] = nan_mq("limMagAtlas", np.float32, u.mag)
 
     # Some exposures are missing position data, flagged with 999/99's.
     ra = np.array(input_cols["ra"])
@@ -1350,7 +1465,6 @@ def _pdf_export(
 
                 with fits.open(str(sess.path(fits_relpath))) as hdul:
                     data = hdul[0].data
-                    astrom_type = hdul[0].header["D_ASTRTY"]
 
                     if wcs is None:
                         wcs = WCS(hdul[0].header)
@@ -1476,6 +1590,15 @@ def _pdf_export(
             cr.restore()
             linenum += 1.5
 
+            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
+            cr.show_text(
+                f"Exposure {exposure.exp_id():>14}: "
+                f"class {plateclass:12} "
+                f"exp {exptime:5.1f} (min) "
+                # f"scale {platescale:7.2f} (arcsec/mm)"
+            )
+            linenum += 1
+
             # XXX hardcoding params
             cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
             cr.show_text(f"Image: center {center_text}")
@@ -1485,17 +1608,7 @@ def _pdf_export(
             linenum += 1
 
             cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
-            cr.show_text(
-                f"Exposure {exposure.exp_id():>14}: "
-                f"astrom {astrom_type.upper():3} "
-                f"class {plateclass:12} "
-                f"exp {exptime:5.1f} (min) "
-                # f"scale {platescale:7.2f} (arcsec/mm)"
-            )
-            linenum += 1
-
-            cr.move_to(MARGIN, label_y0 + linenum * LINE_HEIGHT)
-            url = f"http://dasch.rc.fas.harvard.edu/showplate.php?series={series}&plateNumber={platenum}"
+            url = f"https://starglass.cfa.harvard.edu/plate/{series}{platenum:05d}"
             cr.tag_begin(cairo.TAG_LINK, f"uri='{url}'")
             cr.set_source_rgb(0, 0, 1)
             cr.show_text(url)
@@ -1523,5 +1636,5 @@ def _pdf_export(
     elapsed = time.time() - t0
     info = os.stat(pdfpath)
     print(
-        f"... completed in {elapsed:.0f} seconds and saved to `{pdfpath}` ({info.st_size / 1024**2:.1f} MiB)"
+        f"... completed in {elapsed:.0f} seconds and saved {n_pages} pages to `{pdfpath}` ({info.st_size / 1024**2:.1f} MiB)"
     )

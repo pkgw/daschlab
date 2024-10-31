@@ -17,6 +17,7 @@ ExposureSelector
    .. autosummary::
 
       ~ExposureSelector.has_imaging
+      ~ExposureSelector.has_phot
       ~ExposureSelector.jyear_range
       ~ExposureSelector.local_id
       ~ExposureSelector.meteor
@@ -36,6 +37,7 @@ ExposureSelector
    .. rubric:: Methods Documentation
 
    .. automethod:: has_imaging
+   .. automethod:: has_phot
    .. automethod:: jyear_range
    .. automethod:: local_id
    .. automethod:: meteor

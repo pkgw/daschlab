@@ -1,7 +1,7 @@
 PlateQualityFlags
 =================
 
-.. currentmodule:: daschlab.lightcurves
+.. currentmodule:: daschlab.photometry
 
 .. autoclass:: PlateQualityFlags
    :show-inheritance:
