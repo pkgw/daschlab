@@ -102,4 +102,9 @@ def _query_extract(
     }
 
     data = client.invoke("platephot", payload)
+    if not isinstance(data, list):
+        from . import InteractiveError
+
+        raise InteractiveError(f"platephot API request failed: {data!r}")
+
     return _postproc_phot_table(Extract, _tabulate_phot_data(data))

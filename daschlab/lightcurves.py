@@ -386,6 +386,11 @@ def _query_lc(
     }
 
     data = client.invoke("lightcurve", payload)
+    if not isinstance(data, list):
+        from . import InteractiveError
+
+        raise InteractiveError(f"lightcurve API request failed: {data!r}")
+
     return _postproc_phot_table(Lightcurve, _tabulate_phot_data(data))
 
 

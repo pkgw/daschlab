@@ -188,7 +188,12 @@ def _query_refcat(
     colnames = None
     coltypes = None
     coldata = None
+
     data = client.invoke("querycat", payload)
+    if not isinstance(data, list):
+        from . import InteractiveError
+
+        raise InteractiveError(f"querycat API request failed: {data!r}")
 
     for line in data:
         pieces = line.split(",")

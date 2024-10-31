@@ -1187,7 +1187,12 @@ def _get_exposure_cols(
     colnames = None
     coltypes = None
     coldata = None
+
     data = client.invoke("queryexps", payload)
+    if not isinstance(data, list):
+        from . import InteractiveError
+
+        raise InteractiveError(f"queryexps API request failed: {data!r}")
 
     for line in data:
         pieces = line.split(",")
