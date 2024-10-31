@@ -50,14 +50,16 @@ using them is as follows::
     n = no_ai.count.not_.narrow()
 
 These operations can be conveniently chained together. More complex boolean
-logic can be implemented with the `~LightcurveSelector.where` selection and the
-`~Lightcurve.match` action.
+logic can be implemented with the
+`~daschlab.photometry.PhotometrySelector.where` selection and the
+`~daschlab.photometry.Photometry.match` action.
 
 In terms of implementation, an item like ``lc.keep_only`` is a property that
-returns a helper `LightcurveSelector` object, which is what actually implements
-methods such as `~LightcurveSelector.brighter()`. The selector object helps pair
-the desired action with the desired selection while maintaining a convenient
-code syntax.
+returns a helper `~daschlab.photometry.PhotometrySelector` object, which is what
+actually implements methods such as
+`~daschlab.photometry.PhotometrySelector.brighter()`. The selector object helps
+pair the desired action with the desired selection while maintaining a
+convenient code syntax.
 
 DASCH lightcurves often contain many nondetections (upper limits), which means
 that you may need to be careful about selection logic. For instance::
@@ -92,10 +94,7 @@ from .photometry import (
 
 __all__ = [
     "Lightcurve",
-    "LightcurvePoint",
     "LightcurveSelector",
-    "LocalBinRejectFlags",
-    "PlateQualityFlags",
     "merge",
 ]
 
@@ -105,9 +104,9 @@ class LightcurveSelector(PhotometrySelector):
     A helper object that supports `Lightcurve` filtering functionality.
 
     Lightcurve selector objects are returned by lightcurve selection "action
-    verbs" such as `Lightcurve.keep_only`. Calling one of the methods on a
-    selector instance will apply the associated action to the specified portion
-    of the lightcurve data.
+    verbs" such as `~daschlab.photometry.Photometry.keep_only`. Calling one of
+    the methods on a selector instance will apply the associated action to the
+    specified portion of the lightcurve data.
     """
 
     def sep_below(
@@ -135,7 +134,7 @@ class LightcurveSelector(PhotometrySelector):
         =======
         Usually, another `Lightcurve`
             However, different actions may return different types. For instance,
-            the `Lightcurve.count` action will return an integer.
+            the `~daschlab.photometry.Photometry.count` action will return an integer.
 
         Examples
         ========
@@ -184,7 +183,7 @@ class LightcurveSelector(PhotometrySelector):
         =======
         Usually, another `Lightcurve`
             However, different actions may return different types. For instance,
-            the `Lightcurve.count` action will return an integer.
+            the `~daschlab.photometry.Photometry.count` action will return an integer.
 
         Examples
         ========
@@ -276,10 +275,10 @@ class Lightcurve(Photometry, TimeSeries):
             object.
 
         callout : optional `numpy.ndarray`, default `None`
-            If provided, this should be a boolean array of the same size as
-            the lightcurve table. Points (both detections and nondetections)
-            for which the array is true will be visually "called out" in the
-            plot, highlighted in red.
+            If provided, this should be a boolean array of the same size as the
+            lightcurve table. Points (both detections and nondetections) for
+            which the array is true will be visually "called out" in the plot,
+            highlighted in red.
 
         Returns
         =======
@@ -288,8 +287,8 @@ class Lightcurve(Photometry, TimeSeries):
 
         Examples
         ========
-        The `match` selector combines conveniently with the *callout* functionality
-        in constructs like this::
+        The `~daschlab.photometry.Photometry.match` selector combines
+        conveniently with the *callout* functionality in constructs like this::
 
             # Call out points in the lightcurve with the "suspected defect" flag
             lc.plot(callout=lc.match.any_aflags(AFlags.SUSPECTED_DEFECT))

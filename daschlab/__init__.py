@@ -58,7 +58,7 @@ from .refcat import RefcatSources, RefcatSourceRow, _query_refcat
 from .exposures import Exposures, ExposureRow, _query_exposures
 from .lightcurves import Lightcurve, _query_lc
 from .cutouts import _query_cutout
-
+from .extracts import Extract, _query_extract
 
 __all__ = [
     "SUPPORTED_REFCATS",
@@ -159,7 +159,9 @@ class Session:
     _wwt: Optional[WWTJupyterWidget] = None
     _refcat_table_layer: Optional["pywwt.layers.TableLayer"] = None
     _lc_cache: Dict[str, Lightcurve] = None
+    _extract_cache: Dict[str, Extract] = None
     _exposure_image_layer_cache: dict = None
+    _extract_table_layer_cache: Dict[str, "pywwt.layers.TableLayer"] = None
 
     def __init__(self, root: str, interactive: bool = True, _internal_simg: str = ""):
         self._root = pathlib.Path(root)
@@ -167,7 +169,9 @@ class Session:
         self._apiclient = ApiClient()
         self._internal_simg = _internal_simg
         self._lc_cache = {}
+        self._extract_cache = {}
         self._exposure_image_layer_cache = {}
+        self._extract_table_layer_cache = {}
 
         try:
             self._root.mkdir(parents=True)
@@ -647,6 +651,7 @@ class Session:
         with self._save_atomic(relpath) as f_new:
             lc.write(f_new.name, format="ascii.ecsv", overwrite=True)
 
+        self._lc_cache[name] = lc
         elapsed = time.time() - t0
         self._info(
             f"- Fetched {len(lc)} rows in {elapsed:.0f} seconds and saved as `{self.path(relpath)}`"
@@ -825,6 +830,84 @@ class Session:
 
         self._info(f"- Saved `{self.path(dest_relpath)}`")
         return dest_relpath
+
+    def extract(self, exp_ref: "ExposureReferenceType") -> Extract:
+        """
+        Obtain an extract of photometric data for the specified exposure.
+
+        Parameters
+        ==========
+        exp_ref : `int` or ...
+
+        Returns
+        =======
+        A `daschlab.extracts.Extract` instance.
+
+        Notes
+        =====
+        You must call `~Session.select_target()` and `~Session.select_refcat()`
+        before calling this method.
+
+        The first time you call this method for a given session, it will perform
+        a DASCH API query to fetch information from the lightcurve database,
+        saving the resulting information in a file inside the session's
+        ``lightcurves`` subdirectory. Subsequent calls (i.e., ones made with the
+        data file already existing) will merely check for consistency and load
+        the saved file.
+        """
+        exp = self._resolve_exposure_reference(exp_ref)
+        plate_id = f"{exp['series']}{exp['platenum']:05d}"
+        exp_id = exp.exp_id()
+        refcat = self._refcat["refcat"][0]
+
+        if not exp.has_phot():
+            self._warn(
+                f"cannot get a photometry extract for exposure {exp_id}: it does not have photometry data (in this refcat)"
+            )
+            return None
+
+        extract = self._extract_cache.get(exp_id)
+        if extract is not None:
+            return extract
+
+        relpath = f"extracts/{exp_id}.ecsv"
+
+        try:
+            extract = Extract.read(str(self.path(relpath)), format="ascii.ecsv")
+            extract.meta["daschlab_sess_key"] = str(self._root)
+            extract.meta["daschlab_exposure_id"] = exp_id
+            self._extract_cache[exp_id] = extract
+            return extract
+        except FileNotFoundError:
+            pass
+
+        # We need to fetch it
+
+        self.path("extracts").mkdir(exist_ok=True)
+
+        t0 = time.time()
+        print("- Querying API ...", flush=True)
+        extract = _query_extract(
+            self._apiclient,
+            refcat,
+            plate_id,
+            exp["solnum"],
+            self._query.pos_as_skycoord(),
+        )
+        extract.meta["daschlab_sess_key"] = str(self._root)
+        extract.meta["daschlab_exposure_id"] = exp_id
+        self._extract_cache[exp_id] = extract
+
+        # All done
+
+        with self._save_atomic(relpath) as f_new:
+            extract.write(f_new.name, format="ascii.ecsv", overwrite=True)
+
+        elapsed = time.time() - t0
+        self._info(
+            f"- Fetched {len(extract)} rows in {elapsed:.0f} seconds and saved as `{self.path(relpath)}`"
+        )
+        return extract
 
     async def connect_to_wwt(self):
         """

@@ -15,6 +15,7 @@ for f in *.rst; do
     daschlab.rst|\
     daschlab.cutouts.rst|\
     daschlab.exposures.rst|\
+    daschlab.extracts.rst|\
     daschlab.lightcurves.rst|\
     daschlab.photometry.rst|\
     daschlab.query.rst|\

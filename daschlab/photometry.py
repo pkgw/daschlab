@@ -44,10 +44,11 @@ from .series import SERIES, SeriesKind
 __all__ = [
     "AFlags",
     "BFlags",
+    "LocalBinRejectFlags",
     "Photometry",
     "PhotometryPoint",
     "PhotometrySelector",
-    "LocalBinRejectFlags",
+    "PlateQualityFlags",
 ]
 
 
@@ -64,7 +65,7 @@ def maybe_int(s: str, default: int = 0) -> int:
 
 
 _COLTYPES = {
-    # "REFNumber": int,
+    "ref_number": maybe_int,
     "x_image": maybe_float,
     "y_image": maybe_float,
     "mag_iso": maybe_float,
@@ -127,7 +128,6 @@ _COLTYPES = {
     "b2flags": maybe_int,
     "time_accuracy_days": maybe_float,
     "mask_index": maybe_int,
-    # "catalogNumber": maybe_int,
 }
 
 
@@ -542,12 +542,14 @@ class PhotometryPoint(Row):
             LocalBinRejectFlags,
             _LOCAL_BIN_REJECT_FLAG_DESCRIPTIONS,
         )
-        _report_flags(
-            "PlateQuality",
-            self["plate_quality_flag"],
-            PlateQualityFlags,
-            _PLATE_QUALITY_FLAG_DESCRIPTIONS,
-        )
+        # Temporarily suppressed while I re-add the quality flag info to
+        # the plate DynamoDB.
+        ## _report_flags(
+        ##     "PlateQuality",
+        ##     self["plate_quality_flag"],
+        ##     PlateQualityFlags,
+        ##     _PLATE_QUALITY_FLAG_DESCRIPTIONS,
+        ## )
 
 
 class PhotometrySelector:
@@ -1537,7 +1539,7 @@ def _postproc_phot_table(cls: type, input_cols: dict) -> Photometry:
     # Quantity column, masked, with extra flag values to mask:
     def extra_mq(c, dt, unit, *flagvals):
         a = np.array(input_cols[c], dtype=dt)
-        extra_mask = mask.copy()
+        extra_mask = mask | np.isnan(a)
         for flagval in flagvals:
             extra_mask |= a == flagval
         return Masked(u.Quantity(a, unit), extra_mask)
@@ -1549,6 +1551,7 @@ def _postproc_phot_table(cls: type, input_cols: dict) -> Photometry:
     table["time"] = Time(input_cols["date_jd"], format="jd")
     # this will be filled in for real at the end:
     table["local_id"] = np.zeros(len(gsc_bin_index))
+    table["ref_number"] = extra_mc("ref_number", np.uint64, 0)
     table["magcal_magdep"] = mq("magcal_magdep", np.float32, u.mag)
     table["magcal_magdep_rms"] = extra_mq("magcal_magdep_rms", np.float32, u.mag, 99.0)
     table["limiting_mag_local"] = all_q("limiting_mag_local", np.float32, u.mag)

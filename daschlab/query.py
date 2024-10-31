@@ -66,8 +66,8 @@ class SessionQuery:
 
         See Also
         ========
-        daschlab.query.SessionQuery.new_from_name : convenience function to do a name-based lookup
-        daschlab.query.SessionQuery.new_from_radec : convenience function for equatorial coordinates
+        new_from_name : convenience function to do a name-based lookup
+        new_from_radec : convenience function for equatorial coordinates
         """
         return SessionQuery(name="", ra_deg=coords.ra.deg, dec_deg=coords.dec.deg)
 
@@ -88,8 +88,8 @@ class SessionQuery:
 
         See Also
         ========
-        daschlab.query.SessionQuery.new_from_coords : create a session using generic Astropy coordinates
-        daschlab.query.SessionQuery.new_from_radec : convenience function for equatorial coordinates
+        new_from_coords : create a session using generic Astropy coordinates
+        new_from_radec : convenience function for equatorial coordinates
         """
         c = SkyCoord.from_name(name)
         return SessionQuery(name=name, ra_deg=c.ra.deg, dec_deg=c.dec.deg)
@@ -113,7 +113,7 @@ class SessionQuery:
 
         See Also
         ========
-        daschlab.query.SessionQuery.new_from_coords : create a session using generic Astropy coordinates
-        daschlab.query.SessionQuery.new_from_name : convenience function to do a name-based lookup
+        new_from_coords : create a session using generic Astropy coordinates
+        new_from_name : convenience function to do a name-based lookup
         """
         return SessionQuery(name="", ra_deg=ra_deg, dec_deg=dec_deg)
