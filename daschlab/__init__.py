@@ -817,7 +817,10 @@ class Session:
                 # the 'class' column is handled as a masked array and when we convert it
                 # to a row, the masked value seems to become a float64?
                 h["D_PCLASS"] = "" if exp["class"] is np.ma.masked else exp["class"]
-                h["EXPTIME"] = exp["exptime"] * 60
+
+                if not np.isnan(exp["exptime"]):
+                    h["EXPTIME"] = exp["exptime"] * 60
+
                 h["DATE-OBS"] = exp["obs_date"].unmasked.fits
                 h["MJD-OBS"] = exp["obs_date"].unmasked.mjd
                 h["DATE-SCN"] = exp["scan_date"].unmasked.fits
