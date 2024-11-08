@@ -108,6 +108,8 @@ _COLTYPES = {
     "edgedist": maybe_float,
     "limMagApass": maybe_float,
     "limMagAtlas": maybe_float,
+    "medianColortermApass": maybe_float,
+    "medianColortermAtlas": maybe_float,
 }
 
 
@@ -1284,6 +1286,12 @@ def _postproc_exposures(input_cols) -> Exposures:
     # unitless column, masked by scanned status:
     smc = lambda c, dt: np.ma.array(input_cols[c], mask=scanned_mask, dtype=dt)
 
+    # unitless column, with infinities/NaNs masked
+    def finite_mc(c, dt):
+        a = np.array(input_cols[c], dtype=dt)
+        return np.ma.array(a, mask=~np.isfinite(a))
+
+    # quantity (unit) column, with NaNs masked
     def nan_mq(c, dt, unit):
         a = np.array(input_cols[c], dtype=dt)
         return Masked(u.Quantity(a, unit), ~np.isfinite(a))
@@ -1306,6 +1314,8 @@ def _postproc_exposures(input_cols) -> Exposures:
     table["edge_distance"] = np.array(input_cols["edgedist"], dtype=np.float32) * u.cm
     table["lim_mag_apass"] = nan_mq("limMagApass", np.float32, u.mag)
     table["lim_mag_atlas"] = nan_mq("limMagAtlas", np.float32, u.mag)
+    table["median_colorterm_apass"] = finite_mc("medianColortermApass", np.float32)
+    table["median_colorterm_atlas"] = finite_mc("medianColortermAtlas", np.float32)
 
     # Some exposures are missing position data, flagged with 999/99's.
     ra = np.array(input_cols["ra"])
