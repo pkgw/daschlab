@@ -1320,7 +1320,7 @@ def _postproc_exposures(input_cols) -> Exposures:
     table["expnum"] = np.array(input_cols["expnum"], dtype=np.int8)
     table["solnum"] = smc("solnum", np.int8)
     table["class"] = input_cols["class"]
-    table["exptime"] = np.array(input_cols["exptime"], dtype=np.float32) * u.minute
+    table["exptime"] = nan_mq("exptime", np.float32, u.minute)
     table["obs_date"] = _dasch_dates_as_time_array(input_cols["expdate"])
     table["wcssource"] = input_cols["wcssource"]
     table["scan_date"] = _dasch_dates_as_time_array(input_cols["scandate"])
