@@ -88,6 +88,12 @@ def maybe_float(s: str) -> float:
     return np.nan
 
 
+def maybe_nonneg_int(s: str) -> int:
+    if s:
+        return int(s)
+    return -1
+
+
 _COLTYPES = {
     "series": str,
     "platenum": int,
@@ -110,6 +116,12 @@ _COLTYPES = {
     "limMagAtlas": maybe_float,
     "medianColortermApass": maybe_float,
     "medianColortermAtlas": maybe_float,
+    "nSolutionsApass": maybe_nonneg_int,
+    "nSolutionsAtlas": maybe_nonneg_int,
+    "nMagdepApass": maybe_nonneg_int,
+    "nMagdepAtlas": maybe_nonneg_int,
+    "resultIdApass": str,
+    "resultIdAtlas": str,
 }
 
 
@@ -1291,6 +1303,11 @@ def _postproc_exposures(input_cols) -> Exposures:
         a = np.array(input_cols[c], dtype=dt)
         return np.ma.array(a, mask=~np.isfinite(a))
 
+    # unitless column, with negative values masked
+    def nonneg_mc(c, dt):
+        a = np.array(input_cols[c], dtype=dt)
+        return np.ma.array(a, mask=(a < 0))
+
     # quantity (unit) column, with NaNs masked
     def nan_mq(c, dt, unit):
         a = np.array(input_cols[c], dtype=dt)
@@ -1314,8 +1331,14 @@ def _postproc_exposures(input_cols) -> Exposures:
     table["edge_distance"] = np.array(input_cols["edgedist"], dtype=np.float32) * u.cm
     table["lim_mag_apass"] = nan_mq("limMagApass", np.float32, u.mag)
     table["lim_mag_atlas"] = nan_mq("limMagAtlas", np.float32, u.mag)
+    table["n_solutions_apass"] = nonneg_mc("nSolutionsApass", np.int8)
+    table["n_magdep_apass"] = nonneg_mc("nMagdepApass", np.int8)
     table["median_colorterm_apass"] = finite_mc("medianColortermApass", np.float32)
+    table["result_id_apass"] = input_cols["resultIdApass"]
+    table["n_solutions_atlas"] = nonneg_mc("nSolutionsAtlas", np.int8)
+    table["n_magdep_atlas"] = nonneg_mc("nMagdepAtlas", np.int8)
     table["median_colorterm_atlas"] = finite_mc("medianColortermAtlas", np.float32)
+    table["result_id_atlas"] = input_cols["resultIdAtlas"]
 
     # Some exposures are missing position data, flagged with 999/99's.
     ra = np.array(input_cols["ra"])
