@@ -1317,7 +1317,7 @@ def _postproc_exposures(input_cols) -> Exposures:
     table["platenum"] = np.array(input_cols["platenum"], dtype=np.uint32)
     table["scannum"] = smc("scannum", np.int8)
     table["mosnum"] = smc("mosnum", np.int8)
-    table["expnum"] = np.array(input_cols["expnum"], dtype=np.int8)
+    table["expnum"] = nonneg_mc("expnum", np.int8)
     table["solnum"] = smc("solnum", np.int8)
     table["class"] = input_cols["class"]
     table["exptime"] = nan_mq("exptime", np.float32, u.minute)
