@@ -901,6 +901,11 @@ class Session:
         extract.meta["daschlab_exposure_id"] = exp_id
         self._extract_cache[exp_id] = extract
 
+        # This is a bit silly, but helps us treat lightcurves and extracts more
+        # consistently
+
+        extract["exp_local_id"] = exp_id
+
         # All done
 
         with self._save_atomic(relpath) as f_new:
