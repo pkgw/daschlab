@@ -21,6 +21,7 @@ PhotometrySelector
       ~PhotometrySelector.brighter
       ~PhotometrySelector.detected
       ~PhotometrySelector.detected_and_fainter
+      ~PhotometrySelector.exposure_linked
       ~PhotometrySelector.local_id
       ~PhotometrySelector.meteor
       ~PhotometrySelector.narrow
@@ -43,6 +44,7 @@ PhotometrySelector
    .. automethod:: brighter
    .. automethod:: detected
    .. automethod:: detected_and_fainter
+   .. automethod:: exposure_linked
    .. automethod:: local_id
    .. automethod:: meteor
    .. automethod:: narrow

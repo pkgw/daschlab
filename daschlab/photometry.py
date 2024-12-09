@@ -1,4 +1,4 @@
-# Copyright 2024 the President and Fellows of Harvard College
+# Copyright the President and Fellows of Harvard College
 # Licensed under the MIT License
 
 """
@@ -29,10 +29,10 @@ system.
 
 from enum import IntFlag
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 
 from astropy.coordinates import SkyCoord
-from astropy.table import Column, MaskedColumn, Row, Table
+from astropy.table import Row, Table
 from astropy.time import Time
 from astropy import units as u
 from astropy.utils.masked import Masked
@@ -747,6 +747,47 @@ class PhotometrySelector:
 
         return self._apply(m, **kwargs)
 
+    def exposure_linked(self, **kwargs) -> "Photometry":
+        """
+        Act on rows that have been successfully linked to rows in the
+        `~daschlab.exposures.Exposures` table.
+
+        Parameters
+        ==========
+        **kwargs
+            Parameters forwarded to the action.
+
+        Returns
+        =======
+        Usually, another `Photometry`
+            However, different actions may return different types. For instance,
+            the `Photometry.count` action will return an integer.
+
+        Examples
+        ========
+        Create a lightcurve subset containing only rows that have successfully
+        linked to exposures, and then copy over APASS colorterm data::
+
+            lc = sess.lightcurve(some_local_id)
+            ellc = lc.keep_only.exposure_linked()
+            ellc["ct_apass"] = sess.exposures()["median_colorterm_apass"][ellc["exp_local_id"]]
+
+        Notes
+        =====
+        In principle, every DASCH photometric point should be able to be
+        successfully linked to an exposure in the exposures table. Sometimes,
+        however, data issues prevent this from happening. In order to reliably
+        copy columns from the exposures table to a lightcurve as in the example
+        above, make sure that you remove non-linked columns first.
+        """
+
+        if "exp_local_id" in self._table.columns:
+            m = self._table["exp_local_id"] >= 0
+        else:
+            m = np.zeros(len(self._table), dtype=bool)
+
+        return self._apply(m, **kwargs)
+
     def nonrej_detected(self, **kwargs) -> "Photometry":
         """
         Act on rows that are non-rejected detections.
@@ -1077,7 +1118,7 @@ class Photometry(Table):
     The actual data contained in these tables — the columns — are documented
     elsewhere, `on the main DASCH website`_.
 
-    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/lightcurve-columns/
+    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/dr7/lightcurve-columns/
 
     You should not construct `Photometry` instances directly. Instead, obtain
     lightcurves using the `daschlab.Session.lightcurve()` method.
@@ -1419,7 +1460,7 @@ class Photometry(Table):
         columns known as the “medium” subset. It is defined in `the lightcurve
         table documentation`_.
 
-        .. _the lightcurve table documentation: https://dasch.cfa.harvard.edu/drnext/lightcurve-columns/#medium-columns
+        .. _the lightcurve table documentation: https://dasch.cfa.harvard.edu/dr7/lightcurve-columns/#medium-columns
         """
 
         if format != "csv":

@@ -16,9 +16,9 @@ systematic study of the sky on 100-year time scales.
 .. _astronomical glass plates: https://platestacks.cfa.harvard.edu/
 
 This website contains only the **Python API reference material**. For tutorials
-and howtos, see `the DASCH DRnext documentation`_.
+and howtos, see `the DASCH DR7 documentation`_.
 
-.. _the DASCH DRnext documentation: https://dasch.cfa.harvard.edu/drnext/
+.. _the DASCH DR7 documentation: https://dasch.cfa.harvard.edu/dr7/
 
 This package is designed for primarily interactive usage in a JupyterLab
 environment. The most important item provided in this module is the `Session`
@@ -900,6 +900,11 @@ class Session:
         extract.meta["daschlab_sess_key"] = str(self._root)
         extract.meta["daschlab_exposure_id"] = exp_id
         self._extract_cache[exp_id] = extract
+
+        # This is a bit silly, but helps us treat lightcurves and extracts more
+        # consistently
+
+        extract["exp_local_id"] = exp_id
 
         # All done
 
