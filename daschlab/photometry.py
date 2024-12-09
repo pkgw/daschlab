@@ -1077,7 +1077,7 @@ class Photometry(Table):
     The actual data contained in these tables — the columns — are documented
     elsewhere, `on the main DASCH website`_.
 
-    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/lightcurve-columns/
+    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/dr7/lightcurve-columns/
 
     You should not construct `Photometry` instances directly. Instead, obtain
     lightcurves using the `daschlab.Session.lightcurve()` method.
@@ -1419,7 +1419,7 @@ class Photometry(Table):
         columns known as the “medium” subset. It is defined in `the lightcurve
         table documentation`_.
 
-        .. _the lightcurve table documentation: https://dasch.cfa.harvard.edu/drnext/lightcurve-columns/#medium-columns
+        .. _the lightcurve table documentation: https://dasch.cfa.harvard.edu/dr7/lightcurve-columns/#medium-columns
         """
 
         if format != "csv":

@@ -703,7 +703,7 @@ class Exposures(Table):
     The actual data contained in these tables — the columns — are documented
     elsewhere, `on the main DASCH website`_.
 
-    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/exposurelist-columns/
+    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/dr7/exposurelist-columns/
 
     See :ref:`the module-level documentation <lc-filtering>` of the
     `daschlab.lightcurves` for a summary of the filtering and subsetting
@@ -1114,7 +1114,7 @@ class Exposures(Table):
         The default ``"csv"`` output format only exports a subset of the table columns
         known as the “medium” subset. It is defined in `the exposure-list table documentation`_.
 
-        .. _the exposure-list table documentation: https://dasch.cfa.harvard.edu/drnext/exposurelist-columns/#medium-columns
+        .. _the exposure-list table documentation: https://dasch.cfa.harvard.edu/dr7/exposurelist-columns/#medium-columns
         """
 
         if format != "csv":

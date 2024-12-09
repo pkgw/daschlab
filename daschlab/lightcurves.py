@@ -222,7 +222,7 @@ class Lightcurve(Photometry, TimeSeries):
     The actual data contained in these tables — the columns — are documented
     elsewhere, `on the main DASCH website`_.
 
-    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/drnext/lightcurve-columns/
+    .. _on the main DASCH website: https://dasch.cfa.harvard.edu/dr7/lightcurve-columns/
 
     You should not construct `Lightcurve` instances directly. Instead, obtain
     lightcurves using the `daschlab.Session.lightcurve()` method.
@@ -423,7 +423,7 @@ def merge(lcs: List[Lightcurve]) -> Lightcurve:
     factors like image defects and the local errors of the WCS solution for the
     exposure in question.
 
-    .. _source splitting: https://dasch.cfa.harvard.edu/drnext/ki/source-splitting/
+    .. _source splitting: https://dasch.cfa.harvard.edu/dr7/ki/source-splitting/
 
     This function accomplishes the merger by unifying all of the input
     lightcurves as keyed by their exposure identifier. For each exposure where

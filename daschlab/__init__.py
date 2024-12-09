@@ -16,9 +16,9 @@ systematic study of the sky on 100-year time scales.
 .. _astronomical glass plates: https://platestacks.cfa.harvard.edu/
 
 This website contains only the **Python API reference material**. For tutorials
-and howtos, see `the DASCH DRnext documentation`_.
+and howtos, see `the DASCH DR7 documentation`_.
 
-.. _the DASCH DRnext documentation: https://dasch.cfa.harvard.edu/drnext/
+.. _the DASCH DR7 documentation: https://dasch.cfa.harvard.edu/dr7/
 
 This package is designed for primarily interactive usage in a JupyterLab
 environment. The most important item provided in this module is the `Session`
