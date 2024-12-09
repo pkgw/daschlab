@@ -193,7 +193,7 @@ class ExposureRow(Row):
         that have photometry for one refcat may not have photometry for the
         other.
         """
-        sess_refcat = self._table._sess().refcat()["refcat"][0]
+        sess_refcat = self._table._sess()._refcat_name()
         val = self[
             f"lim_mag_{sess_refcat}"
         ]  # this might be a float or a MaskedConstant
@@ -225,6 +225,86 @@ class ExposureRow(Row):
             tail = f"m{m}s{self['solnum']}"
 
         return f"{self['series']}{self['platenum']:05d}{tail}"
+
+    def photcal_asdf_url(self, refcat: Optional[str] = None) -> str:
+        """
+        Obtain a temporary URL that can be used to download photometric
+        calibration metadata associated with this exposure.
+
+        Parameters
+        ==========
+        refcat : optional `str`, default `None`
+            There are separate calibration data files for the two DASCH DR7
+            reference catalogs: ``"apass"`` or ``"atlas"``. This field indicates
+            which file you’re interested in. If unspecified, will default to the
+            reference catalog being used by the currently active session. This
+            is almost surely what you want.
+
+        Returns
+        =======
+        url : `str`
+            A URL that can be used to download the metadata file.
+
+        Examples
+        ========
+
+        Assuming that the first row in the exposures table has a valid
+        photometric calibration, download its ASDF file and save it to disk::
+
+            import shutil
+            import requests
+
+            # Assume `sess` is a standard daschlab session object
+
+            asdf_url = sess.exposures()[0].photcal_asdf_url()
+
+            with requests.get(asdf_url, stream=True) as resp:
+                with open("exposure0.asdf", "wb") as f_out:
+                    shutil.copyfileobj(resp.raw, f_out)
+
+        Notes
+        =====
+        The returned URL is a presigned AWS S3 download link with a lifetime of
+        around 15 minutes. You can fetch this URL using a browser or any
+        standard HTTP library to obtain the data.
+
+        The resulting data file is stored in the `ASDF`_ format. Its contents
+        are documented on the DASCH DR7 `Photometric Calibration ASDF File
+        Contents`_ page. Typical file sizes are a few megabytes, ranging up to
+        tens of megabytes.
+
+        .. _ASDF: https://asdf.readthedocs.io/
+        .. _Photometric Calibration ASDF File Contents: https://dasch.cfa.harvard.edu/dr7/photcal-asdf-contents/
+
+        Each ASDF file is uniquely identified by a hexadecimal “result ID”. The
+        value to use is taken from one table columns ``result_id_apass`` or
+        ``result_id_atlas``. This value may be empty if the exposure in question
+        was not able to be calibrated against the specified refcat. In that
+        case, this method will raise an exception.
+        """
+        sess = self._table._sess()
+
+        if refcat is None:
+            refcat = sess._refcat_name()
+        else:
+            from . import SUPPORTED_REFCATS
+
+            if refcat not in SUPPORTED_REFCATS:
+                raise ValueError(
+                    f"invalid refcat name {refcat!r}; must be one of: {' '.join(SUPPORTED_REFCATS)}"
+                )
+
+        hexid = self[f"result_id_{refcat}"]
+        if not hexid:
+            raise Exception(f"no photometric calibration ASDF file available for {self.exp_id()}/{refcat}")
+
+        data = sess._apiclient.invoke(f"asset/photcal_asdf/{hexid}", None, method="get")
+        if not isinstance(data, dict):
+            from . import InteractiveError
+
+            raise InteractiveError(f"photcal ASDF asset API request failed: {data!r}")
+
+        return data["location"]
 
 
 ExposureReferenceType = Union[ExposureRow, int]
@@ -497,7 +577,7 @@ class ExposureSelector:
         only present for exposures that have imaging and were successfully
         processed by the DASCH photometric pipeline for that refcat.
         """
-        sess_refcat = self._exposures._sess().refcat()["refcat"][0]
+        sess_refcat = self._exposures._sess()._refcat_name()
         col = self._exposures[f"lim_mag_{sess_refcat}"]
         m = np.isfinite(col.filled(np.nan))
         return self._apply(m, **kwargs)

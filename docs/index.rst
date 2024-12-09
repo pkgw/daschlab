@@ -49,5 +49,7 @@ Table of Contents
 Getting help
 ============
 
-If you run into any issues when using daschlab_, please open an issue `on its
-GitHub repository <https://github.com/pkgw/daschlab/issues>`_.
+If you run into any issues when using daschlab_, please review `the DASCH DR7
+documentation`_, inquire with `the DASCH Astrophysics email group
+<https://gaggle.email/join/dasch@gaggle.email>`_ or open an issue `on its GitHub
+repository <https://github.com/pkgw/daschlab/issues>`_.

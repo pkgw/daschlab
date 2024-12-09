@@ -13,6 +13,7 @@ ExposureRow
       ~ExposureRow.exp_id
       ~ExposureRow.has_imaging
       ~ExposureRow.has_phot
+      ~ExposureRow.photcal_asdf_url
       ~ExposureRow.show
 
    .. rubric:: Methods Documentation
@@ -20,4 +21,5 @@ ExposureRow
    .. automethod:: exp_id
    .. automethod:: has_imaging
    .. automethod:: has_phot
+   .. automethod:: photcal_asdf_url
    .. automethod:: show

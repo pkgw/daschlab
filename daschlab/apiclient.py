@@ -58,7 +58,7 @@ class ApiClient:
                 f"NOTE: using local program `{program}` for API calls", file=sys.stderr
             )
 
-    def invoke(self, endpoint: str, payload: dict) -> object:
+    def invoke(self, endpoint: str, payload: Optional[dict], method: str = "post") -> object:
         """
         Directly invoke a DASCH data API endpoint.
 
@@ -72,21 +72,24 @@ class ApiClient:
         """
 
         if self.debug:
-            print(f"daschlab API: {endpoint} : {payload!r}", file=sys.stderr)
+            print(f"daschlab API: {method} {endpoint} : {payload!r}", file=sys.stderr)
 
         if self.local_program is not None:
             return self._invoke_program(endpoint, payload)
         else:
-            return self._invoke_web(endpoint, payload)
+            return self._invoke_web(endpoint, payload, method)
 
-    def _invoke_web(self, endpoint: str, payload: dict) -> object:
+    def _invoke_web(self, endpoint: str, payload: Optional[dict], method: str) -> object:
         url = f"{self.base_url}/{endpoint}"
-        headers = {}
+        headers = {
+            "User-Agent": "daschlab",
+            "Accept": "application/json",
+        }
 
         if self.api_key:
             headers["x-api-key"] = self.api_key
 
-        with requests.post(url, json=payload, headers=headers) as resp:
+        with requests.request(method, url, json=payload, headers=headers, allow_redirects=False) as resp:
             return resp.json()
 
     def _invoke_program(self, endpoint: str, payload: dict) -> object:
