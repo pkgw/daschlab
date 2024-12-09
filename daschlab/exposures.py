@@ -193,7 +193,7 @@ class ExposureRow(Row):
         that have photometry for one refcat may not have photometry for the
         other.
         """
-        sess_refcat = self._table._sess().refcat()["refcat"][0]
+        sess_refcat = self._table._sess()._refcat_name()
         val = self[
             f"lim_mag_{sess_refcat}"
         ]  # this might be a float or a MaskedConstant
@@ -497,7 +497,7 @@ class ExposureSelector:
         only present for exposures that have imaging and were successfully
         processed by the DASCH photometric pipeline for that refcat.
         """
-        sess_refcat = self._exposures._sess().refcat()["refcat"][0]
+        sess_refcat = self._exposures._sess()._refcat_name()
         col = self._exposures[f"lim_mag_{sess_refcat}"]
         m = np.isfinite(col.filled(np.nan))
         return self._apply(m, **kwargs)

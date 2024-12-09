@@ -213,7 +213,7 @@ class Session:
         else:
             if len(self._refcat):
                 self._info(
-                    f"- Refcat: {len(self._refcat)} sources from `{self._refcat['refcat'][0]}`"
+                    f"- Refcat: {len(self._refcat)} sources from `{self._refcat_name()}`"
                 )
             else:
                 self._info("- Refcat: present but empty")
@@ -441,9 +441,9 @@ class Session:
                 self._warn(
                     f"on-disk refcat is empty; assuming that it is for refcat `{name}`"
                 )
-            elif self._refcat["refcat"][0] != name:
+            elif self._refcat_name() != name:
                 raise InteractiveError(
-                    f"on-disk refcat name `{self._refcat['refcat'][0]}` does not agree with in-code name `{name}`"
+                    f"on-disk refcat name `{self._refcat_name()}` does not agree with in-code name `{name}`"
                 )
 
             return self
@@ -491,6 +491,12 @@ class Session:
                 f"you must select the refcat first - run something like `{self._my_var_name()}.select_refcat('apass')`"
             )
         return self._refcat
+
+    def _refcat_name(self) -> str:
+        """
+        Get the name of the currently active refcat.
+        """
+        return self.refcat()["refcat"][0]
 
     def exposures(self) -> Exposures:
         """
@@ -861,7 +867,6 @@ class Session:
         exp = self._resolve_exposure_reference(exp_ref)
         plate_id = f"{exp['series']}{exp['platenum']:05d}"
         exp_id = exp.exp_id()
-        refcat = self._refcat["refcat"][0]
 
         if not exp.has_phot():
             self._warn(
@@ -892,7 +897,7 @@ class Session:
         print("- Querying API ...", flush=True)
         extract = _query_extract(
             self._apiclient,
-            refcat,
+            self._refcat_name(),
             plate_id,
             exp["solnum"],
             self._query.pos_as_skycoord(),
