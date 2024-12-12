@@ -57,6 +57,7 @@ setup_args = dict(
         "pywwt>=0.24.2",
         "requests>=2",
         "scipy>=1.10",
+        "tqdm>=4.60",
     ],
     extras_require={
         "docs": [
