@@ -292,7 +292,9 @@ class ExposureRow(Row):
                 f"no photometric calibration ASDF file available for {self.exp_id()}/{refcat}"
             )
 
-        data = sess._apiclient.invoke(f"asset/photcal_asdf/{hexid}", None, method="get")
+        data = sess._apiclient.invoke(
+            f"/dasch/dr7/asset/photcal_asdf/{hexid}", None, method="get"
+        )
         if not isinstance(data, dict):
             from . import InteractiveError
 
@@ -1276,7 +1278,7 @@ def _get_exposure_cols(
     coltypes = None
     coldata = None
 
-    data = client.invoke("queryexps", payload)
+    data = client.invoke("/dasch/dr7/queryexps", payload)
     if not isinstance(data, list):
         from . import InteractiveError
 

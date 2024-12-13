@@ -231,7 +231,7 @@ def get_mosaic(
         "binning": binning,
     }
 
-    raw = sess._apiclient.invoke("mosaic_package", payload)
+    raw = sess._apiclient.invoke("/dasch/dr7/mosaic_package", payload)
 
     try:
         # Suppress some warnings from dataclasses-json that I think we can ignore

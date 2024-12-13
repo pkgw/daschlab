@@ -385,7 +385,7 @@ def _query_lc(
         "ref_number": int(ref_number),
     }
 
-    data = client.invoke("lightcurve", payload)
+    data = client.invoke("/dasch/dr7/lightcurve", payload)
     if not isinstance(data, list):
         from . import InteractiveError
 

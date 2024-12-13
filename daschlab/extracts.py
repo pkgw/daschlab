@@ -101,7 +101,7 @@ def _query_extract(
         "center_dec_deg": center.dec.deg,
     }
 
-    data = client.invoke("platephot", payload)
+    data = client.invoke("/dasch/dr7/platephot", payload)
     if not isinstance(data, list):
         from . import InteractiveError
 
