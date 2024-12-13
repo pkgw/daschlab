@@ -32,7 +32,6 @@ not scanned at all; some lack imaging because it was not possible to associate
 that exposure with a WCS solution.
 """
 
-from datetime import datetime
 import io
 import os
 import re
@@ -51,21 +50,14 @@ from bokeh.plotting import figure, show
 import cairo
 import numpy as np
 from PIL import Image
-from pytz import timezone
 from pywwt.layers import ImageLayer, TableLayer
 
 from .apiclient import ApiClient
 from .series import SERIES, SeriesKind
+from .timeutil import dasch_time_as_isot, dasch_isots_as_time_array
 
 
 __all__ = ["Exposures", "ExposureReferenceType", "ExposureRow", "ExposureSelector"]
-
-
-def _daschtime_to_isot(t: str) -> str:
-    outer_bits = t.split("T", 1)
-    inner_bits = outer_bits[-1].split("-")
-    outer_bits[-1] = ":".join(inner_bits)
-    return "T".join(outer_bits)
 
 
 _PLATE_NAME_REGEX = re.compile(r"^([a-zA-Z]+)([0-9]{1,5})$")
@@ -105,11 +97,11 @@ _COLTYPES = {
     "ra": maybe_float,
     "dec": maybe_float,
     "exptime": maybe_float,
-    "expdate": _daschtime_to_isot,
+    "expdate": dasch_time_as_isot,
     # "epoch": float,
     "wcssource": lambda s: s.lower(),
-    "scandate": _daschtime_to_isot,
-    "mosdate": _daschtime_to_isot,
+    "scandate": dasch_time_as_isot,
+    "mosdate": dasch_time_as_isot,
     "centerdist": maybe_float,
     "edgedist": maybe_float,
     "limMagApass": maybe_float,
@@ -296,7 +288,9 @@ class ExposureRow(Row):
 
         hexid = self[f"result_id_{refcat}"]
         if not hexid:
-            raise Exception(f"no photometric calibration ASDF file available for {self.exp_id()}/{refcat}")
+            raise Exception(
+                f"no photometric calibration ASDF file available for {self.exp_id()}/{refcat}"
+            )
 
         data = sess._apiclient.invoke(f"asset/photcal_asdf/{hexid}", None, method="get")
         if not isinstance(data, dict):
@@ -1306,69 +1300,6 @@ def _get_exposure_cols(
     return dict(t for t in zip(colnames, coldata) if t[1] is not None)
 
 
-def _dasch_date_as_datetime(date: str) -> Optional[datetime]:
-    if not date:
-        return None
-
-    if date.endswith(":60.0"):
-        # Work around timestamp formatting bug in the legacy exposure data table
-        date = date[:-4] + "59.9"
-
-    if date.endswith(":60.0Z"):
-        date = date[:-5] + "59.9Z"
-
-    if date.endswith("Z"):
-        # expdates are UTC and labeled as such; but Python < 3.11 can't
-        # parse the Z extension without help(!)
-        date = date[:-1] + "+00:00"
-
-    try:
-        dt = datetime.fromisoformat(date)
-    except Exception as e:
-        raise Exception(f"failed to parse ISO8601 'T' format {date!r}") from e
-
-    if dt.tzinfo is None:
-        # scandates, etc. have no associated timezone info; but we know
-        # that all of these are in this timezone:
-        tz = timezone("US/Eastern")
-        dt = tz.localize(dt)
-
-    return dt
-
-
-def _dasch_dates_as_time_array(dates) -> Time:
-    """
-    Convert an iterable of DASCH dates to an Astropy Time array, with masking of
-    missing values.
-    """
-    # No one had any photographic plates in 1800! But the exact value here
-    # doesn't matter; we just need something accepted by the datetime-Time
-    # constructor.
-    invalid_dt = datetime(1800, 1, 1)
-
-    invalid_indices = []
-    dts = []
-
-    for i, dstr in enumerate(dates):
-        dt = _dasch_date_as_datetime(dstr)
-        if dt is None:
-            invalid_indices.append(i)
-            dt = invalid_dt
-
-        dts.append(dt)
-
-    times = Time(dts, format="datetime")
-
-    for i in invalid_indices:
-        times[i] = np.ma.masked
-
-    # If we don't do this, Astropy is unable to roundtrip masked times out of
-    # the ECSV format.
-    times.format = "isot"
-
-    return times
-
-
 def _postproc_exposures(input_cols) -> Exposures:
     table = Exposures(masked=True)
 
@@ -1401,10 +1332,10 @@ def _postproc_exposures(input_cols) -> Exposures:
     table["solnum"] = smc("solnum", np.int8)
     table["class"] = input_cols["class"]
     table["exptime"] = nan_mq("exptime", np.float32, u.minute)
-    table["obs_date"] = _dasch_dates_as_time_array(input_cols["expdate"])
+    table["obs_date"] = dasch_isots_as_time_array(input_cols["expdate"])
     table["wcssource"] = input_cols["wcssource"]
-    table["scan_date"] = _dasch_dates_as_time_array(input_cols["scandate"])
-    table["mos_date"] = _dasch_dates_as_time_array(input_cols["mosdate"])
+    table["scan_date"] = dasch_isots_as_time_array(input_cols["scandate"])
+    table["mos_date"] = dasch_isots_as_time_array(input_cols["mosdate"])
     table["center_distance"] = (
         np.array(input_cols["centerdist"], dtype=np.float32) * u.cm
     )
