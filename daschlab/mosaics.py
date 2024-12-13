@@ -16,8 +16,9 @@ from astropy.io import fits
 from astropy.table import Table
 from astropy import units as u
 from astropy.utils.masked import Masked
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json
+from marshmallow.fields import String
 import numpy as np
 import requests
 from tqdm import tqdm
@@ -27,8 +28,9 @@ from .timeutil import (
     dasch_isot_as_astropy,
 )
 
-# These are all camelCase; maybe dataclasses-json has an equivalent of serde's
-# rename_all?
+
+# Results from the DASCH `mosaic_package` API. These are all camelCase; maybe
+# dataclasses-json has an equivalent of serde's rename_all?
 
 
 @dataclass_json
@@ -100,6 +102,100 @@ class MosaicPackageResponse:
     baseFitsUrl: str
     baseFitsSize: int
     metadata: MosaicPackageMetadata
+
+
+# Results from the StarGlass GET /plates/p/{plate_id} endpoint. Most of this we
+# ignore because we prefer the DASCH stuff, but I figured I might as well fully
+# type out the response.
+
+
+@dataclass_json
+@dataclass
+class PhotoData:
+    plate_id: str
+    portion: str
+    url: str
+    thumbnail: bool
+    thumbnail_ratio: int
+    image_type: str
+
+
+@dataclass_json
+@dataclass
+class MosaicData:
+    plate_id: str
+    bin_factor: str
+    flags: str
+    rotation: str
+    mosaic_num: str
+
+
+@dataclass_json
+@dataclass
+class ExposureData:
+    crpix1: float
+    crpix2: float
+    ctr_dec: float
+    ctr_ra: float
+    delta_dec_x: float
+    delta_dec_y: float
+    delta_ra_x: float
+    delta_ra_y: float
+    naxis1: int
+    naxis2: int
+    datetime: str
+    exposure: float
+    exposure_num: int
+    solution_num: int
+
+
+@dataclass_json
+@dataclass
+class CatalogExposureData:
+    ctr_dec: float
+    ctr_ra: float
+    datetime: str
+    exposure_num: int
+    exposure_length: float
+
+
+@dataclass_json
+@dataclass
+class LocationData:
+    name: str
+    lat: float
+    lon: float
+    elevation: float
+
+
+@dataclass_json
+@dataclass
+class MentionData:
+    author: str
+    notebook: str
+    page_num: int
+
+
+@dataclass_json
+@dataclass
+class GetPlateResponse:
+    plate_id: str
+    jacket_images: List[PhotoData]
+    plate_images: List[PhotoData]
+    jacket_thumbnail: List[PhotoData]
+    plate_thumbnail: List[PhotoData]
+    mosaics: List[MosaicData]
+    exposures: List[ExposureData]
+    catalog_exposures: List[CatalogExposureData]
+    telescope: str
+    location: LocationData
+    class_: str = field(
+        metadata={"dataclasses_json": {"mm_field": String(data_key="class")}}
+    )
+    has_markings: bool
+    markings_cleaned: bool
+    comment_astronomers: Optional[List[str]] = None
+    mentions: Optional[List[MentionData]] = None
 
 
 def _b64_to_hex(b64text: str) -> str:
@@ -221,7 +317,14 @@ def get_mosaic(
 
     # First API call - Starglass-level metadata
 
-    pass  # TODO
+    sg_raw = sess._apiclient.invoke(f"/plates/p/{plate_id}", None, method="get")
+
+    try:
+        sg_resp: GetPlateResponse = GetPlateResponse.schema().load(sg_raw)
+    except Exception as e:
+        # from . import InteractiveError
+        # raise InteractiveError(f"GetPlate API request failed: {raw!r}") from e
+        raise
 
     # Second API call - the mosaic_package call that gets us DASCH
     # metadata and the presigned S3 URL.
@@ -231,13 +334,13 @@ def get_mosaic(
         "binning": binning,
     }
 
-    raw = sess._apiclient.invoke("/dasch/dr7/mosaic_package", payload)
+    mp_raw = sess._apiclient.invoke("/dasch/dr7/mosaic_package", payload)
 
     try:
         # Suppress some warnings from dataclasses-json that I think we can ignore
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            resp: MosaicPackageResponse = MosaicPackageResponse.schema().load(raw)
+            resp: MosaicPackageResponse = MosaicPackageResponse.schema().load(mp_raw)
     except Exception as e:
         # from . import InteractiveError
         # raise InteractiveError(f"mosaic_package API request failed: {raw!r}") from e
@@ -351,6 +454,25 @@ def get_mosaic(
             f"Plate Stacks Curator's remark about this plate: {md.mosaic.legacyComment}",
             None,
         )
+
+    add(
+        "D_MARKED",
+        1 if sg_resp.has_markings else 0,
+        "Plate has/had handwritten markings",
+    )
+    add(
+        "D_ERASED",
+        1 if sg_resp.markings_cleaned else 0,
+        "Markings were erased for DASCH scan",
+    )
+    maybe("D_PCLASS", sg_resp.class_, "Logged plate class ID", truthy=True)
+    add("SITE", sg_resp.location.name, "Name of observing site")
+    add("TELESCOP", sg_resp.telescope, None)
+    add("LATITUDE", sg_resp.location.lat, "[deg] Observatory latitude")
+    add(
+        "LONGITUD", -sg_resp.location.lon, "[deg] Observatory longitude"
+    )  # TODO: double check sign convention
+    add("HEIGHT", sg_resp.location.elevation, "[m] Observatory elevation")
 
     add("D_SCNNUM", md.mosaic.scanNum, "Sequence number of the plate scan")
     add("D_MOSNUM", md.mosaic.mosNum, "Sequence number of the mosaic")
@@ -579,6 +701,60 @@ def get_mosaic(
 
     prim_hdu.data = data
 
+    # Table of photographs. Skip the thumbnails since they're derived products.
+    # Omit the URLs since they're temporary.
+
+    add("D_NPPHOT", len(sg_resp.plate_images), "Number of DASCH plate photographs")
+    add(
+        "D_NJPHOT",
+        len(sg_resp.jacket_images),
+        "Number of DASCH plate-jacket photographs",
+    )
+
+    t_phottype = []
+    t_portion = []
+
+    for pphot in sg_resp.plate_images:
+        t_phottype.append(pphot.image_type)
+        t_portion.append(pphot.portion)
+
+    for jphot in sg_resp.jacket_images:
+        t_phottype.append(jphot.image_type)
+        t_portion.append(jphot.portion)
+
+    photo_tbl = Table({"kind": t_phottype, "portion": t_portion})
+    photo_hdu = fits.BinTableHDU(data=photo_tbl, name="PHOTOS")
+
+    # Table of plate mentions
+
+    add(
+        "D_NCNAMS",
+        len(sg_resp.comment_astronomers or []),
+        "Number of names extracted from curator comment",
+    )
+    add(
+        "D_NMNTNS",
+        len(sg_resp.mentions or []),
+        "Number of plate mentions in PHaEDRA analysis",
+    )
+
+    t_name = []
+    t_notebook = []
+    t_pagenum = []
+
+    for cname in sg_resp.comment_astronomers or []:
+        t_name.append(cname)
+        t_notebook.append("*curator")
+        t_pagenum.append(1)
+
+    for mention in sg_resp.mentions or []:
+        t_name.append(mention.author)
+        t_notebook.append(mention.notebook)
+        t_pagenum.append(mention.page_num)
+
+    people_tbl = Table({"name": t_name, "notebook": t_notebook, "page_num": t_pagenum})
+    people_hdu = fits.BinTableHDU(data=people_tbl, name="PEOPLE")
+
     # Assemble and write, saving via a tempfile just in case something goes wrong.
 
     va_hdul = fits.HDUList()
@@ -587,6 +763,8 @@ def get_mosaic(
     if exp_hdu is not None:
         va_hdul.append(exp_hdu)
 
+    va_hdul.append(photo_hdu)
+    va_hdul.append(people_hdu)
     va_hdul.append(orig_header_hdu)
 
     with NamedTemporaryFile(
