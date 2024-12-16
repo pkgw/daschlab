@@ -9,7 +9,7 @@ import base64
 import gzip
 import os.path
 from tempfile import NamedTemporaryFile
-from typing import List, Optional, Tuple
+from typing import List, Optional
 import warnings
 
 from astropy.io import fits
@@ -291,7 +291,7 @@ def _do_astrometry(binning: int, add_with_comment, b01HeaderGz: str) -> int:
     return nsol
 
 
-def get_mosaic(
+def _get_mosaic(
     sess: "daschlab.Session",
     plate_id: str,
     binning: int,
@@ -350,7 +350,7 @@ def get_mosaic(
     # Download that base mosaic! Maybe.
 
     if need_fetch_base:
-        print("Fetching base mosaic file ...")
+        sess._info("- Fetching base mosaic file ...")
         sess.path("base_mosaics").mkdir(exist_ok=True)
 
         with (
@@ -393,7 +393,7 @@ def get_mosaic(
     else:
         expected_shape = expected_b01_shape
 
-    print("Generating value-added FITS ...")
+    sess._info("- Generating value-added FITS ...")
 
     with fits.open(sess.path(base_relpath)) as base_hdul:
         # For the future: it would be nice to avoid loading the whole mosaic
@@ -787,4 +787,5 @@ def get_mosaic(
 
     va_hdul.writeto(f_temp.name, overwrite=True)
     os.rename(f_temp.name, sess.path(va_relpath))
+    sess._info(f"- Saved `{sess.path(va_relpath)}`")
     return va_relpath

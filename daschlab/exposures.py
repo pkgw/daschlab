@@ -168,7 +168,8 @@ class ExposureRow(Row):
 
     def has_phot(self) -> bool:
         """
-        Test whether this exposure has associated photometric data or not.
+        Test whether this exposure has associated photometric data for the session's
+        reference catalog, or not.
 
         Returns
         =======
@@ -208,6 +209,10 @@ class ExposureRow(Row):
             form ``m{mosnum}s{solnum}``. If it corresponds to a logged exposure
             that is not assignable to a mosaic WCS solution, it has the form
             ``e{expnum}``.
+
+        See Also
+        ========
+        plate_id : Get the plate ID
         """
         m = self["mosnum"]
 
@@ -217,6 +222,30 @@ class ExposureRow(Row):
             tail = f"m{m}s{self['solnum']}"
 
         return f"{self['series']}{self['platenum']:05d}{tail}"
+
+    def plate_id(self) -> str:
+        """
+        Get the name of the plate that this exposure is associated with.
+
+        Returns
+        =======
+        `str`
+            The returned string has the form ``{series}{platenum}``, where
+            the plate number is zero-padded to be five digits wide.
+
+        Notes
+        =====
+        In most cases, you should work with exposure IDs, obtainable with
+        the `exp_id` method. This is because some plates were exposured
+        multiple times, and each exposure has its own duration, WCS solution,
+        and source catalog. Multiple exposures in one exposure list may be
+        associated with the same plate.
+
+        See Also
+        ========
+        exp_id : Get the unique ID of this particular exposure
+        """
+        return f"{self['series']}{self['platenum']:05d}"
 
     def photcal_asdf_url(self, refcat: Optional[str] = None) -> str:
         """

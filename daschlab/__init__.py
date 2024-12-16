@@ -147,6 +147,10 @@ class Session:
     - `~Session.lightcurve()` to access lightcurves for the catalog sources
     - `~Session.cutout()` to download exposure cutout images centered on
       your target
+    - `~Session.mosaic()` to download full-plate "mosaic" data and synthesize
+      a "value-added" FITS image
+    - `~Session.extract()` to download photometric data from a single plate,
+      centered on your target
     """
 
     _root: pathlib.Path
@@ -740,7 +744,7 @@ class Session:
         Examples
         ========
         Load the cutout of the chronologically-first calibrated observation of
-        the target field (the plate list is in chronological order)::
+        the target field (the exposure list is in chronological order)::
 
             from astropy.io import fits
 
@@ -766,6 +770,7 @@ class Session:
 
         See Also
         ========
+        mosaic : obtain a full-plate "mosaic" image
         daschlab.exposures.Exposures.show : to show a cutout in the WWT view
         """
         from astropy.io import fits
@@ -865,7 +870,7 @@ class Session:
         the saved file.
         """
         exp = self._resolve_exposure_reference(exp_ref)
-        plate_id = f"{exp['series']}{exp['platenum']:05d}"
+        plate_id = exp.plate_id()
         exp_id = exp.exp_id()
 
         if not exp.has_phot():
@@ -921,6 +926,81 @@ class Session:
             f"- Fetched {len(extract)} rows in {elapsed:.0f} seconds and saved as `{self.path(relpath)}`"
         )
         return extract
+
+    def mosaic(self, plate_id: str, binning: int) -> str:
+        """
+        Obtain a "value-added" full-plate FITS mosaic.
+
+        Parameters
+        ==========
+        plate_id : `str`
+            The ID of the plate whose mosaic will be fetched. This should have
+            the form ``{series}{platenum}``, where the plate number is
+            zero-padded to be five digits wide. Given an exposure table record,
+            you can obtain its plate ID with
+            `~daschlab.exposures.ExposureRow.plate_id()`.
+
+        binning : int
+            Allowed values are 1 or 16. If 1, the full-resolution mosaic is
+            downloaded. If 16, the 16×16 binned mosaic is downloaded. The
+            binned file is smaller by a factor of 256, so the binned mosaics
+            should be preferred if at all possible.
+
+        Returns
+        =======
+        `str`
+            The returned value is a path to a local FITS file containing the
+            value-added mosaic, *relative to the session root*.
+
+        Examples
+        ========
+        Construct a binned FITS file for the plate with chronologically-last
+        calibrated observation of the target field (the exposure list is in
+        chronological order), and add it to the WWT display::
+
+            # Assumes `sess` is a Session object and it has been connected to
+            # WWT.
+
+            from toasty import TilingMethod
+
+            imaged_exposures = sess.exposures().keep_only.has_imaging()
+            exp = imaged_exposures[-1]
+
+            # Generate the value-add bin16 mosaic
+            relpath = sess.mosaic(exp.plate_id(), 16)
+
+            # Important to force TOAST tiling to avoid distortions with the
+            # large angular sizes of DASCH plates.
+            diskpath = str(sess.path(relpath))
+            sess.wwt().layers.add_image_layer(diskpath, tiling_method=TilingMethod.TOAST)
+
+        Notes
+        =====
+        The first time you call this method for a given plate, it will perform
+        several DASCH API queries and download the "base" DASCH mosaic, saving
+        the resulting file inside the session's ``base_mosaics`` subdirectory.
+        This download may take a while; the largest DASCH base mosaics are more
+        than a gigabyte in size. *daschlab* will then create the "value-add"
+        mosaic inside the session's ``mosaics`` subdirectory, normalizing the
+        data structure and inserting a variety of headers into the final FITS
+        file. Subsequent invocations do no extra work if the final output file
+        already exists.
+
+        Unbinned full-plate mosaics are large, and they can therefore be slow
+        to load into visualization tools. Prefer using the `cutout` method
+        unless you are really going to want to examine the entire mosaic at
+        the pixel level.
+
+        Once a value-added mosaic is created, you can delete the base mosaics
+        in the ``base_mosaics`` directory to save disk space.
+
+        See Also
+        ========
+        cutout : get a full-resolution cutout around the session query point
+        """
+        from .mosaics import _get_mosaic
+
+        return _get_mosaic(self, plate_id, binning)
 
     async def connect_to_wwt(self):
         """
