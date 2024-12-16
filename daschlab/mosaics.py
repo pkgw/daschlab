@@ -9,7 +9,7 @@ import base64
 import gzip
 import os.path
 from tempfile import NamedTemporaryFile
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import warnings
 
 from astropy.io import fits
@@ -189,11 +189,13 @@ class GetPlateResponse:
     catalog_exposures: List[CatalogExposureData]
     telescope: str
     location: LocationData
-    class_: str = field(
-        metadata={"dataclasses_json": {"mm_field": String(data_key="class")}}
-    )
     has_markings: bool
     markings_cleaned: bool
+    class_: Optional[str] = field(
+        default=None,
+        metadata={"dataclasses_json": {"mm_field": String(data_key="class")}},
+    )
+    plate_comment: Optional[str] = None
     comment_astronomers: Optional[List[str]] = None
     mentions: Optional[List[MentionData]] = None
 
@@ -202,16 +204,11 @@ def _b64_to_hex(b64text: str) -> str:
     return base64.b64decode(b64text).hex()
 
 
-def _do_astrometry(is_bin16: bool, add_with_comment, b01HeaderGz: str) -> int:
+def _do_astrometry(binning: int, add_with_comment, b01HeaderGz: str) -> int:
     """
-    Take an archived pipeline astrometric solution header and get
-    all of its information into our value-add FITS header.
+    Take an archived pipeline astrometric solution header and get all of its
+    information into our value-add FITS header.
     """
-
-    if is_bin16:
-        import sys
-
-        print("XXXXX NOT HANDLING BIN16!!!!!!", file=sys.stderr)
 
     add = lambda k, v: add_with_comment(k, v, None)
     hdrtext = gzip.decompress(base64.b64decode(b01HeaderGz))
@@ -254,7 +251,7 @@ def _do_astrometry(is_bin16: bool, add_with_comment, b01HeaderGz: str) -> int:
         if isol == 0:
             otag = ""
         else:
-            otag = chr(ord("A") + nsol - 1)
+            otag = chr(ord("A") + isol - 1)
 
         add("WCSAXES" + otag, 2)
         add("WCSNAME" + otag, f"DASCH astrometric solution #{isol + 1}")
@@ -263,18 +260,22 @@ def _do_astrometry(is_bin16: bool, add_with_comment, b01HeaderGz: str) -> int:
         # In order for Astropy to accept our nonstandard distortion headers,
         # we must use this projection type!!
         add("CTYPE1" + otag, "RA---TPV")
-        add("CTYPE2" + otag, "RA---TPV")
+        add("CTYPE2" + otag, "DEC--TPV")
+
+        # Thankfully, the distortion terms are defined in such a way that
+        # we can use exactly the same values regardless of the binning level.
+        # All we need to do is scale CRPIXn and CDn_m.
 
         add("CUNIT1" + otag, "deg")
         add("CUNIT2" + otag, "deg")
         add("CRVAL1" + otag, base_hdr["CRVAL1" + itag])
         add("CRVAL2" + otag, base_hdr["CRVAL2" + itag])
-        add("CRPIX1" + otag, base_hdr["CRPIX1" + itag])
-        add("CRPIX2" + otag, base_hdr["CRPIX2" + itag])
-        add("CD1_1" + otag, base_hdr["CD1_1" + itag])
-        add("CD1_2" + otag, base_hdr["CD1_2" + itag])
-        add("CD2_1" + otag, base_hdr["CD2_1" + itag])
-        add("CD2_2" + otag, base_hdr["CD2_2" + itag])
+        add("CRPIX1" + otag, (base_hdr["CRPIX1" + itag] - 0.5) / binning + 0.5)
+        add("CRPIX2" + otag, (base_hdr["CRPIX2" + itag] - 0.5) / binning + 0.5)
+        add("CD1_1" + otag, base_hdr["CD1_1" + itag] * binning)
+        add("CD1_2" + otag, base_hdr["CD1_2" + itag] * binning)
+        add("CD2_1" + otag, base_hdr["CD2_1" + itag] * binning)
+        add("CD2_2" + otag, base_hdr["CD2_2" + itag] * binning)
 
         if itag == "":
             check_tail = lambda s: s[-1] in "0123456789"
@@ -372,18 +373,20 @@ def get_mosaic(
     # Generate the value-added file
 
     md = resp.metadata
-    # print(resp) # XXXX
-
     expected_b01_shape = (md.mosaic.b01Height, md.mosaic.b01Width)
+    rot_k = 0
 
     if md.astrometry is not None:
-        if md.astrometry.rotationDelta in (-270, -90, 90, 270):
-            expected_b01_shape = expected_b01_shape[::-1]
-
-        if md.astrometry.rotationDelta != 0:
-            import sys
-
-            print("XXXX HANDLE ROTATIONDELTA!!!!!", file=sys.stderr)
+        if md.astrometry.rotationDelta == 90:
+            # Sample plate: a01267, overlaps star: Polaris
+            rot_k = -1
+        elif md.astrometry.rotationDelta == 180 or md.astrometry.rotationDelta == -180:
+            # Sample plate for +180: ac12037, overlaps star: Polaris
+            # Sample plate for -180: ac01895, overlaps star: Polaris
+            rot_k = 2
+        elif md.astrometry.rotationDelta == -90:
+            # Sample plate: ac01018, overlaps star: Polaris
+            rot_k = 1
 
     if is_bin16:
         expected_shape = (expected_b01_shape[0] // 16, expected_b01_shape[1] // 16)
@@ -394,7 +397,9 @@ def get_mosaic(
 
     with fits.open(sess.path(base_relpath)) as base_hdul:
         # For the future: it would be nice to avoid loading the whole mosaic
-        # into memory if we can. Sometimes we can't avoid it, though.
+        # into memory if we can. Sometimes we can't avoid it, though. There's
+        # some relevant code in daschdata/results.py for recreating "raw"
+        # mosaics.
 
         if len(base_hdul) != 2:
             raise Exception(
@@ -408,8 +413,7 @@ def get_mosaic(
             )
 
         base_header = base_hdul[1].header
-
-        # TODO: rotate data if needed
+        data = np.rot90(data, k=rot_k)
 
     # An HDU that preserves the headers of the base mosaic:
 
@@ -443,6 +447,7 @@ def get_mosaic(
     add(
         "DASCHLAB", "0.1", "Version of daschlab that made this file"
     )  # TODO: VERSION THIS
+    add("DASCHCIT", "https://dasch.cfa.harvard.edu/citing/", "How to cite")
     add("D_PLATE", plate_id, "ID of the plate imaged in this file")
     add("D_SERIES", md.series, "ID of the plate series this plate belongs to")
     add("D_PLNUM", md.plateNumber, "Number of the plate within its series")
@@ -451,7 +456,14 @@ def get_mosaic(
         # Astropy will break this into multiple cards if needed
         add(
             "COMMENT",
-            f"Plate Stacks Curator's remark about this plate: {md.mosaic.legacyComment}",
+            f"DASCH database comment about this plate: {md.mosaic.legacyComment}",
+            None,
+        )
+
+    if sg_resp.plate_comment:
+        add(
+            "COMMENT",
+            f"Plate Stacks Curator's remark about this plate: {sg_resp.plate_comment}",
             None,
         )
 
@@ -479,6 +491,7 @@ def get_mosaic(
     add("S_OPER", base_header["S_OPER"], "Scanner operator")
     date("-SCN", base_header["DATE-SCN"], "Date of the scan")
     date("-MOS", md.mosaic.creationDate, "Date the mosaic was created")
+    add("D_BINLEV", binning, "Amount of pixel binning in this file")
     add(
         "D_ORGMD5",
         _b64_to_hex(md.mosaic.b16OrigFileMD5 if is_bin16 else md.mosaic.b01OrigFileMD5),
@@ -516,7 +529,7 @@ def get_mosaic(
         )
 
         if a.b01HeaderGz:
-            n_sol = _do_astrometry(is_bin16, add, a.b01HeaderGz)
+            n_sol = _do_astrometry(binning, add, a.b01HeaderGz)
 
         n_exp = sum(e is not None for e in a.exposures)
         n_sol_no_exp = sum(e is None for e in a.exposures[:n_sol])
