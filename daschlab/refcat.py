@@ -189,7 +189,7 @@ def _query_refcat(
     coltypes = None
     coldata = None
 
-    data = client.invoke("querycat", payload)
+    data = client.invoke("/dasch/dr7/querycat", payload)
     if not isinstance(data, list):
         from . import InteractiveError
 

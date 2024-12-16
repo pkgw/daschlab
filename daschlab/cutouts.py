@@ -32,7 +32,7 @@ def _query_cutout(
         "center_dec_deg": center.dec.deg,
     }
 
-    result = client.invoke("cutout", payload)
+    result = client.invoke("/dasch/dr7/cutout", payload)
     if not isinstance(result, str):
         raise Exception(
             f"cutout API query for {series}{platenum:05d}/{solnum} "

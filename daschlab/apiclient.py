@@ -23,7 +23,6 @@ __all__ = ["ApiClient"]
 # You'll need to be at the CfA, or logged onto its VPN.
 
 _URL_ROOT = "https://api.starglass.cfa.harvard.edu"
-_API_VERSION = "dasch/dr7"
 
 
 class ApiClient:
@@ -40,8 +39,8 @@ class ApiClient:
         self.base_url = os.environ.get("DASCHLAB_API_BASE_URL")
 
         if not self.base_url:
-            stage = "registered" if api_key else "public"
-            self.base_url = f"{_URL_ROOT}/{stage}/{_API_VERSION}"
+            definition = "full" if api_key else "public"
+            self.base_url = f"{_URL_ROOT}/{definition}"
 
         self.local_program = None
         self.debug = False
@@ -52,13 +51,15 @@ class ApiClient:
         # to directly access the underlying DASCH AWS resources, though.
         program = os.environ.get("DASCHLAB_API_PROGRAM")
         if program:
-            self.base_url = ""
             self.local_program = program
             print(
-                f"NOTE: using local program `{program}` for API calls", file=sys.stderr
+                f"NOTE: using local program `{program}` for main API calls",
+                file=sys.stderr,
             )
 
-    def invoke(self, endpoint: str, payload: Optional[dict], method: str = "post") -> object:
+    def invoke(
+        self, endpoint: str, payload: Optional[dict], method: str = "post"
+    ) -> object:
         """
         Directly invoke a DASCH data API endpoint.
 
@@ -74,13 +75,15 @@ class ApiClient:
         if self.debug:
             print(f"daschlab API: {method} {endpoint} : {payload!r}", file=sys.stderr)
 
-        if self.local_program is not None:
+        if self.local_program is not None and endpoint.startswith("/dasch/dr7/"):
             return self._invoke_program(endpoint, payload)
         else:
             return self._invoke_web(endpoint, payload, method)
 
-    def _invoke_web(self, endpoint: str, payload: Optional[dict], method: str) -> object:
-        url = f"{self.base_url}/{endpoint}"
+    def _invoke_web(
+        self, endpoint: str, payload: Optional[dict], method: str
+    ) -> object:
+        url = f"{self.base_url}{endpoint}"
         headers = {
             "User-Agent": "daschlab",
             "Accept": "application/json",
@@ -89,11 +92,16 @@ class ApiClient:
         if self.api_key:
             headers["x-api-key"] = self.api_key
 
-        with requests.request(method, url, json=payload, headers=headers, allow_redirects=False) as resp:
+        with requests.request(
+            method, url, json=payload, headers=headers, allow_redirects=False
+        ) as resp:
             return resp.json()
 
     def _invoke_program(self, endpoint: str, payload: dict) -> object:
+        assert endpoint.startswith("/dasch/dr7/")
+        short_endpoint = endpoint[11:]
+
         pltext = json.dumps(payload)
-        argv = [self.local_program, endpoint, pltext]
+        argv = [self.local_program, short_endpoint, pltext]
         result = subprocess.check_output(argv, shell=False, text=True)
         return json.loads(result)

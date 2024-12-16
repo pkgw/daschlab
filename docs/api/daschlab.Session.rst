@@ -17,6 +17,7 @@ Session
       ~Session.extract
       ~Session.lightcurve
       ~Session.merge_lightcurves
+      ~Session.mosaic
       ~Session.path
       ~Session.query
       ~Session.refcat
@@ -33,6 +34,7 @@ Session
    .. automethod:: extract
    .. automethod:: lightcurve
    .. automethod:: merge_lightcurves
+   .. automethod:: mosaic
    .. automethod:: path
    .. automethod:: query
    .. automethod:: refcat
