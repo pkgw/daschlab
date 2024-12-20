@@ -69,7 +69,7 @@ __all__ = [
     "source_name_to_fs_name",
 ]
 
-__version__ = "0.dev0"  # cranko project-version
+__version__ = "0.2.0"  # cranko project-version
 
 SUPPORTED_REFCATS: FrozenSet[str] = frozenset(("apass", "atlas"))
 
