@@ -61,6 +61,7 @@ from .cutouts import _query_cutout
 from .extracts import Extract, _query_extract
 
 __all__ = [
+    "__version__",
     "SUPPORTED_REFCATS",
     "InteractiveError",
     "Session",
@@ -68,6 +69,7 @@ __all__ = [
     "source_name_to_fs_name",
 ]
 
+__version__ = "0.dev0"  # cranko project-version
 
 SUPPORTED_REFCATS: FrozenSet[str] = frozenset(("apass", "atlas"))
 

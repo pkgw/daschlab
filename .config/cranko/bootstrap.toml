@@ -1,0 +1,6 @@
+[[project]]
+qnames = [
+    'daschlab',
+    'pypa',
+]
+version = '0.1'

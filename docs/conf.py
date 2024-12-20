@@ -2,7 +2,7 @@ project = "daschlab"
 author = "Peter K. G. Williams"
 copyright = "2024, " + author
 
-release = "0.1"  # cranko project-version
+release = "0.dev0"  # cranko project-version
 version = ".".join(release.split(".")[:2])
 
 extensions = [

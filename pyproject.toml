@@ -2,5 +2,5 @@
 requires = ['setuptools', 'wheel']
 build-backend = 'setuptools.build_meta'
 
-# [tool.cranko]
-# annotated_files = []
+[tool.cranko]
+annotated_files = ["docs/conf.py", "daschlab/__init__.py"]
