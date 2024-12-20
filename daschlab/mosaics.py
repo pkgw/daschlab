@@ -296,7 +296,7 @@ def _get_mosaic(
     plate_id: str,
     binning: int,
 ):
-    from . import __version__
+    from . import __version__, get_version_doi
 
     if binning == 1:
         is_bin16 = False
@@ -447,6 +447,7 @@ def _get_mosaic(
 
     add("DASCHVAM", "DR7", "I'm a DASCH Data Release 7 value-add mosaic")
     add("DASCHLAB", __version__, "Version of daschlab that made this file")
+    add("DLABDOI", get_version_doi(), "DOI of this version of daschlab")
     add("DASCHCIT", "https://dasch.cfa.harvard.edu/citing/", "How to cite")
     add("D_PLATE", plate_id, "ID of the plate imaged in this file")
     add("D_SERIES", md.series, "ID of the plate series this plate belongs to")

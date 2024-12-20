@@ -28,6 +28,14 @@ session by calling the `~daschlab.open_session()` function::
 Virtually all subsequent analysis occurs through actions connected to an
 initialized `~daschlab.Session` instance.
 
+The version of *daschlab* described by this documentation has a DOI of
+`xx.xxxx/dev-build.daschlab.version`_. You can obtain the DOI of the version of
+*daschlab* that you are running via the `~daschlab.get_version_doi` function.
+This DOI should be reported in scholarly publications that made use of
+*daschlab*.
+
+.. _xx.xxxx/dev-build.daschlab.version: https://doi.org/xx.xxxx/dev-build.daschlab.version
+
 
 Table of Contents
 =================
