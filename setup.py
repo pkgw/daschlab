@@ -33,12 +33,12 @@ project homepage].
 
 
 setup_args = dict(
-    name="daschlab",
-    version="0.1",
+    name="daschlab",  # cranko project-name
+    version="0.dev0",  # cranko project-version
     description="DASCH data analysis",
     long_description=get_long_desc(),
     long_description_content_type="text/markdown",
-    author="DASCH Team",
+    author="Peter Williams",
     url="https://github.com/pkgw/daschlab",
     packages=[
         "daschlab",

@@ -1,0 +1,9 @@
+[repo]
+upstream_urls = [
+    'git@github.com:pkgw/daschlab.git',
+    'https://github.com/pkgw/daschlab.git',
+]
+
+[npm]
+
+[projects]

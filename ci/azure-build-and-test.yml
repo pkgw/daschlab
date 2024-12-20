@@ -1,0 +1,94 @@
+# Main build jobs for CI/CD on Azure Pipelines.
+
+parameters:
+- name: builds
+  type: object
+  default:
+
+  - name: linux_312
+    vmImage: ubuntu-20.04
+    vars:
+      PYTHON_SERIES: "3.12"
+
+  - name: linux_39
+    vmImage: ubuntu-20.04
+    vars:
+      PYTHON_SERIES: "3.9"
+
+  - name: macos_312
+    vmImage: macos-12
+    vars:
+      PYTHON_SERIES: "3.12"
+
+  - name: macos_39
+    vmImage: macos-12
+    vars:
+      PYTHON_SERIES: "3.9"
+
+  - name: windows_312
+    vmImage: windows-2022
+    vars:
+      PYTHON_SERIES: "3.12"
+
+  - name: windows_39
+    vmImage: windows-2022
+    vars:
+      PYTHON_SERIES: "3.9"
+
+jobs:
+- ${{ each build in parameters.builds }}:
+  - job: ${{ format('build_{0}', build.name) }}
+    pool:
+      vmImage: ${{ build.vmImage }}
+    variables:
+      ${{ insert }}: ${{ build.vars }}
+    steps:
+
+    - template: azure-job-setup.yml
+      parameters:
+        setupBuild: true
+
+    - bash: |
+        set -euo pipefail
+        source activate-conda.sh
+        set -x
+        \conda create -y -n build setuptools pip python="$PYTHON_SERIES"
+        conda activate build
+        pip install $BASH_WORKSPACE/sdist/*.tar.gz --no-deps
+      displayName: Install from sdist
+
+    - bash: |
+        set -euo pipefail
+        source activate-conda.sh
+        conda activate build
+        set -x
+
+        python -c "import daschlab"
+      displayName: Smoketest
+
+- job: docs
+  pool:
+    vmImage: ubuntu-20.04
+  steps:
+  - template: azure-job-setup.yml
+    parameters:
+      setupBuild: true
+
+  - bash: |
+      set -euo pipefail
+      source activate-conda.sh
+      set -x
+      \conda create -y -n build setuptools pip python=3.12
+      conda activate build
+      pip install $BASH_WORKSPACE/sdist/*.tar.gz --no-deps
+    displayName: Install from sdist
+
+  - bash: |
+      set -euo pipefail
+      source activate-conda.sh
+      conda activate build
+      set -x
+      \conda install -y astropy-sphinx-theme numpydoc sphinx sphinx-automodapi
+      cd docs
+      make html
+    displayName: Build docs
