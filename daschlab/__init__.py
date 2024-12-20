@@ -65,11 +65,82 @@ __all__ = [
     "SUPPORTED_REFCATS",
     "InteractiveError",
     "Session",
+    "get_concept_doi",
+    "get_version_doi",
     "open_session",
     "source_name_to_fs_name",
 ]
 
 __version__ = "0.dev0"  # cranko project-version
+
+
+def get_version_doi() -> str:
+    """
+    Get the DOI associated with the exact version of *daschlab* that you are
+    running.
+
+    Returns
+    =======
+    str
+
+    Notes
+    =====
+    If you are reporting the results of a scientific analysis based on
+    *daschlab*, you are strongly recommended to use this function to ensure that
+    you cite the DOI of the exact version of the software that you used. If you
+    use *daschlab* to generate data files that will be archived, we suggest
+    embedding using this function to determine the DOI of *daschlab* dynamically
+    and embedding it in those files as metadata.
+
+    See also `How to Cite DASCH`_.
+
+    .. _How to Cite DASCH: https://dasch.cfa.harvard.edu/citing/
+
+    The returned `DOI`_ will start with the characters "10.". If you are running
+    a development build of the software, the returned value will instead start
+    with "xx.", and will not be a valid DOI.
+
+    .. _DOI: https://www.doi.org/the-identifier/what-is-a-doi/
+
+    See Also
+    ========
+    get_concept_doi : Get the DOI that identifies the *daschlab* software
+    """
+    return "xx.xxxx/dev-build.daschlab.version"
+
+
+def get_concept_doi() -> str:
+    """
+    Get the "concept DOI" that identifies the *daschlab* software.
+
+    Returns
+    =======
+    str
+
+    Notes
+    =====
+    The "concept DOI" associated with *daschlab* identifies the *daschlab*
+    software in general. The value returned by this function should never
+    change. In most cases, you probably should use the "version DOI",
+    identifying the exact version of the software that is running. You can
+    obtain this with the function `get_version_doi`.
+
+    See also `How to Cite DASCH`_.
+
+    .. _How to Cite DASCH: https://dasch.cfa.harvard.edu/citing/
+
+    The returned `DOI`_ will start with the characters "10.". If you are running
+    a development build of the software, the returned value will instead start
+    with "xx.", and will not be a valid DOI.
+
+    .. _DOI: https://www.doi.org/the-identifier/what-is-a-doi/
+
+    See Also
+    ========
+    get_version_doi : Get the DOI of the precise version of *daschlab* in use
+    """
+    return "xx.xxxx/dev-build.daschlab.concept"
+
 
 SUPPORTED_REFCATS: FrozenSet[str] = frozenset(("apass", "atlas"))
 
