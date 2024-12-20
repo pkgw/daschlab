@@ -1,7 +1,7 @@
 # Licensed under the MIT License
 #
-# Deployment workflows, run when all CI tests pass on the `master` or `rc
-# branches. NB: right now we do nothing on `master`! (But we need a dummy job to
+# Deployment workflows, run when all CI tests pass on the `main` or `rc
+# branches. NB: right now we do nothing on `main`! (But we need a dummy job to
 # keep Pipelines happy.) That could change.
 
 parameters:
