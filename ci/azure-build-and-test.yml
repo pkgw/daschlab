@@ -54,6 +54,7 @@ jobs:
         set -x
         \conda create -y -n build setuptools pip python="$PYTHON_SERIES"
         conda activate build
+        conda install -y --file conda-requirements.txt
         pip install $BASH_WORKSPACE/sdist/*.tar.gz --no-deps
       displayName: Install from sdist
 
