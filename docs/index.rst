@@ -28,6 +28,14 @@ session by calling the `~daschlab.open_session()` function::
 Virtually all subsequent analysis occurs through actions connected to an
 initialized `~daschlab.Session` instance.
 
+The version of *daschlab* described by this documentation has a DOI of
+`10.5281/zenodo.14537904`_. You can obtain the DOI of the version of
+*daschlab* that you are running via the `~daschlab.get_version_doi` function.
+This DOI should be reported in scholarly publications that made use of
+*daschlab*.
+
+.. _10.5281/zenodo.14537904: https://doi.org/10.5281/zenodo.14537904
+
 
 Table of Contents
 =================

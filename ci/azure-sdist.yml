@@ -30,12 +30,12 @@ jobs:
   - bash: cranko release-workflow apply-versions
     displayName: Apply Cranko versions
 
-  ### - bash: |
-  ###     cranko zenodo preregister --metadata=ci/zenodo.json5 daschlab daschlab/__init__.py CHANGELOG.md
-  ###   displayName: "Preregister Zenodo DOI"
-  ###   ${{ if and(eq(variables['Build.SourceBranchName'], 'rc'), ne(variables['build.reason'], 'PullRequest')) }}:
-  ###     env:
-  ###         ZENODO_TOKEN: $(ZENODO_TOKEN)
+  - bash: |
+      cranko zenodo preregister --metadata=ci/zenodo.json5 daschlab daschlab/__init__.py docs/index.rst CHANGELOG.md
+    displayName: "Preregister Zenodo DOI"
+    ${{ if and(eq(variables['Build.SourceBranchName'], 'rc'), ne(variables['build.reason'], 'PullRequest')) }}:
+      env:
+          ZENODO_TOKEN: $(ZENODO_TOKEN)
 
   - bash: |
       set -xeuo pipefail

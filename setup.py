@@ -34,7 +34,7 @@ project homepage].
 
 setup_args = dict(
     name="daschlab",  # cranko project-name
-    version="0.2.0",  # cranko project-version
+    version="0.3.0",  # cranko project-version
     description="DASCH data analysis",
     long_description=get_long_desc(),
     long_description_content_type="text/markdown",

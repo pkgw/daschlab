@@ -1,0 +1,31 @@
+{
+  "conceptrecid": "14537903",
+  "metadata": {
+    "access_right": "open",
+    "creators": [
+      {
+        "affiliation": "Center for Astrophysics | Harvard & Smithsonian",
+        "name": "Williams, Peter K. G.",
+        "orcid": "0000-0003-3734-3587"
+      }
+    ],
+    "description": "<i>daschlab</i> is a Python package that assists with astrophysical     analysis of data from <a href=\"https://dasch.cfa.harvard.edu/\">DASCH</a>, the effort     to scan Harvard College Observatory’s collection of     <a href=\"https://platestacks.cfa.harvard.edu/\">astronomical glass plates</a>. This     irreplaceable resource provides a means for systematic study of the sky on 100-year     time scales. For more information, including installation instructions, please visit     the <a href=\"https://daschlab.readthedocs.io/\">daschlab documentation</a>.",
+    "keywords": [
+      "Astronomy",
+      "DASCH",
+      "JupyterLab",
+      "Python",
+      "Visualization"
+    ],
+    "language": "eng",
+    "license": "MIT",
+    "publication_date": "2024-12-20",
+    "title": "daschlab 0.3.0",
+    "upload_type": "software",
+    "version": "0.3.0"
+  },
+  "conceptdoi": "10.5281/zenodo.14537903",
+  "record_id": "14537904",
+  "doi": "10.5281/zenodo.14537904",
+  "bucket_link": "https://zenodo.org/api/files/9b38d817-f4f2-43aa-b9dd-c2227f2fa519"
+}
