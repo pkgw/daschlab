@@ -2,10 +2,11 @@
 daschlab: The DASCH Data Analysis Package
 =========================================
 
-daschlab_ is a Python package that assists with astrophysical analysis of data
-from DASCH_, the effort to scan Harvard College Observatory’s collection of
-`astronomical glass plates`_. This irreplaceable resource provides a means
-for systematic study of the sky on 100-year time scales.
+daschlab_ is a Python package that assists with the retrieval and astrophysical
+analysis of data from DASCH_, the project to scan Harvard College Observatory’s
+collection of `astronomical glass plates`_. *daschlab* provides access to
+hundreds of terabytes of scientific data documenting the history of the entire
+night sky over the years ~1880–1990.
 
 .. _daschlab: https://daschlab.readthedocs.io/
 .. _DASCH: https://dasch.cfa.harvard.edu/
