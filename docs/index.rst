@@ -18,9 +18,10 @@ and howtos, see `the DASCH DR7 documentation`_.
 .. _the DASCH DR7 documentation: https://dasch.cfa.harvard.edu/dr7/
 
 This package is designed for primarily interactive usage in a JupyterLab
-environment. The most important item provided in this module is the
-`~daschlab.Session` class, which defines a daschlab analysis session. Obtain a
-session by calling the `~daschlab.open_session()` function::
+environment, although it fully supports non-interactive uses as well. The most
+important item provided in the main module is the `~daschlab.Session` class,
+which defines a *daschlab* analysis session. Obtain a session by calling the
+`~daschlab.open_session()` function::
 
    from daschlab import open_session
 
@@ -33,9 +34,11 @@ The version of *daschlab* described by this documentation has a DOI of
 `xx.xxxx/dev-build.daschlab.version`_. You can obtain the DOI of the version of
 *daschlab* that you are running via the `~daschlab.get_version_doi` function.
 This DOI should be reported in scholarly publications that made use of
-*daschlab*.
+*daschlab*. See `How to Cite DASCH`_ for more information.
 
 .. _xx.xxxx/dev-build.daschlab.version: https://doi.org/xx.xxxx/dev-build.daschlab.version
+
+.. _How to Cite DASCH: https://dasch.cfa.harvard.edu/citing/
 
 
 Table of Contents
