@@ -49,6 +49,7 @@ import warnings
 from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
 import astropy.utils.exceptions
+import astropy.version
 import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
@@ -72,6 +73,13 @@ __all__ = [
 ]
 
 __version__ = "0.dev0"  # cranko project-version
+
+
+if astropy.version.major < 6:
+    warnings.warn(
+        f"daschlab requires Astropy version 6.0 or greater, but you have Astropy version {astropy.__version__}. "
+        "If you don't upgrade your Astropy, expect strange crashes."
+    )
 
 
 def get_version_doi() -> str:

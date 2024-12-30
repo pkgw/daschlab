@@ -92,10 +92,19 @@ class ApiClient:
         if self.api_key:
             headers["x-api-key"] = self.api_key
 
-        with requests.request(
-            method, url, json=payload, headers=headers, allow_redirects=False
-        ) as resp:
-            return resp.json()
+        try:
+            with requests.request(
+                method, url, json=payload, headers=headers, allow_redirects=False
+            ) as resp:
+                return resp.json()
+        except Exception as e:
+            # TODO: this might be a timeout, which we should handle better
+            terse_payload = json.dumps(
+                payload, ensure_ascii=False, indent=None, separators=(",", ":")
+            )
+            raise Exception(
+                f"error invoking web API {method} {url} with payload {terse_payload}"
+            ) from e
 
     def _invoke_program(self, endpoint: str, payload: dict) -> object:
         assert endpoint.startswith("/dasch/dr7/")
