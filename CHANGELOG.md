@@ -1,3 +1,21 @@
+# daschlab 1.0.0 (2024-12-30)
+
+For DASCH Data Release 7, we are releasing *daschlab* version 1.0! There are not
+actually many code changes relative to the previous version, though:
+
+- Work around limitations with parsing times for versions of Python before 3.11
+  (reported by Zhengjie Tian on the mailing list).
+- Require the latest versions of pywwt and toasty, to ensure that we can
+  display DASCH cutout images. The latest pywwt version adds a workaround for
+  a bug in the supporting `reproject` package.
+- Try to improve some diagnostics.
+- Tidy up the documentation a bit.
+
+The DOI of this release is [10.5281/zenodo.14574817][vdoi].
+
+[vdoi]: https://doi.org/10.5281/zenodo.14574817
+
+
 # daschlab 0.3.0 (2024-12-20)
 
 This release adds Zenodo DOI registration, including new APIs to report the DOI

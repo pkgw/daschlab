@@ -49,6 +49,7 @@ import warnings
 from astropy.coordinates import Angle, SkyCoord
 from astropy import units as u
 import astropy.utils.exceptions
+import astropy.version
 import numpy as np
 from pywwt.jupyter import connect_to_app, WWTJupyterWidget
 
@@ -71,7 +72,14 @@ __all__ = [
     "source_name_to_fs_name",
 ]
 
-__version__ = "0.3.0"  # cranko project-version
+__version__ = "1.0.0"  # cranko project-version
+
+
+if astropy.version.major < 6:
+    warnings.warn(
+        f"daschlab requires Astropy version 6.0 or greater, but you have Astropy version {astropy.__version__}. "
+        "If you don't upgrade your Astropy, expect strange crashes."
+    )
 
 
 def get_version_doi() -> str:
@@ -106,7 +114,7 @@ def get_version_doi() -> str:
     ========
     get_concept_doi : Get the DOI that identifies the *daschlab* software
     """
-    return "10.5281/zenodo.14537904"
+    return "10.5281/zenodo.14574817"
 
 
 def get_concept_doi() -> str:

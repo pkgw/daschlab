@@ -19,13 +19,13 @@
     ],
     "language": "eng",
     "license": "MIT",
-    "publication_date": "2024-12-20",
-    "title": "daschlab 0.3.0",
+    "publication_date": "2024-12-30",
+    "title": "daschlab 1.0.0",
     "upload_type": "software",
-    "version": "0.3.0"
+    "version": "1.0.0"
   },
   "conceptdoi": "10.5281/zenodo.14537903",
-  "record_id": "14537904",
-  "doi": "10.5281/zenodo.14537904",
-  "bucket_link": "https://zenodo.org/api/files/9b38d817-f4f2-43aa-b9dd-c2227f2fa519"
+  "record_id": "14574817",
+  "doi": "10.5281/zenodo.14574817",
+  "bucket_link": "https://zenodo.org/api/files/4cd3beb7-e281-4b81-9cb7-107a67387113"
 }

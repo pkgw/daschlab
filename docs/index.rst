@@ -2,10 +2,11 @@
 daschlab: The DASCH Data Analysis Package
 =========================================
 
-daschlab_ is a Python package that assists with astrophysical analysis of data
-from DASCH_, the effort to scan Harvard College Observatory’s collection of
-`astronomical glass plates`_. This irreplaceable resource provides a means
-for systematic study of the sky on 100-year time scales.
+daschlab_ is a Python package that assists with the retrieval and astrophysical
+analysis of data from DASCH_, the project to scan Harvard College Observatory’s
+collection of `astronomical glass plates`_. *daschlab* provides access to
+hundreds of terabytes of scientific data documenting the history of the entire
+night sky over the years ~1880–1990.
 
 .. _daschlab: https://daschlab.readthedocs.io/
 .. _DASCH: https://dasch.cfa.harvard.edu/
@@ -17,9 +18,10 @@ and howtos, see `the DASCH DR7 documentation`_.
 .. _the DASCH DR7 documentation: https://dasch.cfa.harvard.edu/dr7/
 
 This package is designed for primarily interactive usage in a JupyterLab
-environment. The most important item provided in this module is the
-`~daschlab.Session` class, which defines a daschlab analysis session. Obtain a
-session by calling the `~daschlab.open_session()` function::
+environment, although it fully supports non-interactive uses as well. The most
+important item provided in the main module is the `~daschlab.Session` class,
+which defines a *daschlab* analysis session. Obtain a session by calling the
+`~daschlab.open_session()` function::
 
    from daschlab import open_session
 
@@ -29,12 +31,14 @@ Virtually all subsequent analysis occurs through actions connected to an
 initialized `~daschlab.Session` instance.
 
 The version of *daschlab* described by this documentation has a DOI of
-`10.5281/zenodo.14537904`_. You can obtain the DOI of the version of
+`10.5281/zenodo.14574817`_. You can obtain the DOI of the version of
 *daschlab* that you are running via the `~daschlab.get_version_doi` function.
 This DOI should be reported in scholarly publications that made use of
-*daschlab*.
+*daschlab*. See `How to Cite DASCH`_ for more information.
 
-.. _10.5281/zenodo.14537904: https://doi.org/10.5281/zenodo.14537904
+.. _10.5281/zenodo.14574817: https://doi.org/10.5281/zenodo.14574817
+
+.. _How to Cite DASCH: https://dasch.cfa.harvard.edu/citing/
 
 
 Table of Contents
