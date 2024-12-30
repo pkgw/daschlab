@@ -54,9 +54,10 @@ setup_args = dict(
         "pillow>=10",
         "pycairo>=1.20",
         "pytz>=2024",
-        "pywwt>=0.24.2",
+        "pywwt>=0.25",
         "requests>=2",
         "scipy>=1.10",
+        "toasty>=0.20",
         "tqdm>=4.60",
     ],
     extras_require={

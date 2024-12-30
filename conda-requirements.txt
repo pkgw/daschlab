@@ -10,12 +10,12 @@ notebook
 numpy>=1.20
 pillow>=10
 pycairo>=1.20
-pywwt>=0.23
+pywwt>=0.25
 pytz>=2024
 requests>=2
 scipy>=1.10
 shapely
-toasty
+toasty>=0.20
 tqdm>=4.60
 wwt_api_client
 wwt_data_formats

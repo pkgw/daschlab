@@ -6,6 +6,8 @@ Utilities for dealing with dates and times.
 """
 
 from datetime import datetime
+import re
+import sys
 from typing import Iterable, Optional
 
 from astropy.time import Time
@@ -25,6 +27,8 @@ __all__ = [
 # datetime-Time constructor. To be safe we choose a value that can never be
 # confused with a date that's relevant to DASCH.
 INVALID_DT = datetime(1800, 1, 1)
+
+FRACTIONAL_SECOND_RE = re.compile(r"(.*)T(\d+:\d+:\d+)\.(\d+)(Z?)")
 
 
 def dasch_time_as_isot(t: str) -> str:
@@ -54,6 +58,16 @@ def dasch_isot_as_datetime(date: str) -> Optional[datetime]:
 
     if date.endswith(":60.0Z"):
         date = date[:-5] + "59.9Z"
+
+    # Before Python 3.11, datetime.fromisoformat() can't handle fractional
+    # seconds. Lame! This feels worth working around. So, just truncate the
+    # fraction if needed. Our timestamps aren't trustworthy to sub-second
+    # precision anyway.
+    if (sys.version_info.major * 100 + sys.version_info.minor) < 311:
+        m = FRACTIONAL_SECOND_RE.match(date)
+
+        if m is not None:
+            date = f"{m[1]}T{m[2]}{m[4]}"
 
     if date.endswith("Z"):
         # expdates are UTC and labeled as such; but Python < 3.11 can't
