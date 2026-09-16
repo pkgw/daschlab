@@ -51,6 +51,7 @@ setup_args = dict(
         "dataclasses-json>=0.6",
         "ipykernel>=6",
         "numpy>=1.20",
+        "pandas>=1.2"
         "pillow>=10",
         "pycairo>=1.20",
         "pytz>=2024",
