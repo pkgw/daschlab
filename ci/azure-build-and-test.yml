@@ -5,30 +5,30 @@ parameters:
   type: object
   default:
 
-  - name: linux_310
+  - name: linux_312
     vmImage: ubuntu-latest
     vars:
-      PYTHON_SERIES: "3.10"
+      PYTHON_SERIES: "3.12"
 
   - name: linux_314
     vmImage: ubuntu-latest
     vars:
       PYTHON_SERIES: "3.14"
 
-  - name: macos_310
+  - name: macos_312
     vmImage: macos-latest
     vars:
-      PYTHON_SERIES: "3.10"
+      PYTHON_SERIES: "3.12"
 
   - name: macos_314
     vmImage: macos-latest
     vars:
       PYTHON_SERIES: "3.14"
 
-  - name: windows_310
+  - name: windows_312
     vmImage: windows-latest
     vars:
-      PYTHON_SERIES: "3.10"
+      PYTHON_SERIES: "3.12"
 
   - name: windows_314
     vmImage: windows-latest
