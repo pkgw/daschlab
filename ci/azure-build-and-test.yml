@@ -10,30 +10,30 @@ parameters:
     vars:
       PYTHON_SERIES: "3.12"
 
-  - name: linux_39
+  - name: linux_314
     vmImage: ubuntu-latest
     vars:
-      PYTHON_SERIES: "3.9"
+      PYTHON_SERIES: "3.14"
 
   - name: macos_312
     vmImage: macos-latest
     vars:
       PYTHON_SERIES: "3.12"
 
-  - name: macos_39
+  - name: macos_314
     vmImage: macos-latest
     vars:
-      PYTHON_SERIES: "3.9"
+      PYTHON_SERIES: "3.14"
 
   - name: windows_312
     vmImage: windows-latest
     vars:
       PYTHON_SERIES: "3.12"
 
-  - name: windows_39
+  - name: windows_314
     vmImage: windows-latest
     vars:
-      PYTHON_SERIES: "3.9"
+      PYTHON_SERIES: "3.14"
 
 jobs:
 - ${{ each build in parameters.builds }}:
@@ -79,7 +79,7 @@ jobs:
       set -euo pipefail
       source activate-conda.sh
       set -x
-      \conda create -y -n build setuptools pip python=3.12
+      \conda create -y -n build setuptools pip python=3.14
       conda activate build
       conda install -y --file conda-requirements.txt
       pip install $BASH_WORKSPACE/sdist/*.tar.gz --no-deps
