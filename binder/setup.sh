@@ -12,7 +12,7 @@ pip install \
   bokeh \
   dataclasses-json \
   ipyevents \
-  ipykernel \
+  'ipykernel <7' \
   jupyterlab \
   jupyterlab_widgets \
   nbclassic \
