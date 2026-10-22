@@ -624,7 +624,9 @@ class Session:
         times; they will be omitted from such searches. The filtering is only
         based on the midpoint time, and does not factor in the duration of the
         exposure, or the uncertainty in the midpoint time, which can be as much
-        as a whole day.
+        as a whole day. This filtering is **not** automatically propagated to
+        any lightcurves that you retrieve, which will affect cross-matching
+        between the lightcurve and exposure tables.
 
         Since the exposure list is cached, if you query for exposures with
         filtering active, the filtering will stay in effect for all subsequent
