@@ -1,3 +1,25 @@
+# daschlab 1.1.0 (2026-10-22)
+
+- Add support for date filtering in `Session.exposures()`, which is powered by
+  updates to the corresponding web API (#44). It is often easier to just fetch
+  all of the exposures and then filter the list once it's been downloaded, but
+  there's a modest speed boost to filtering on the server side that can add up
+  in high-volume situations.
+- Update some dependency specifications, including indicating an incompatibility
+  with the ipykernel 7.x series. This is really [a problem in pywwt][pywwt-392],
+  but it affects the interactive WorldWide Telescope integration that is
+  important to a lot of *daschlab* usage.
+- Print out the *daschlab* DOI and citation information upon interactive session
+  startup.
+- Avoid an Astropy warning about importing the `ErfaWarning` type.
+
+[pywwt-392]: https://github.com/WorldWideTelescope/pywwt/issues/392
+
+The DOI of this release is [10.5281/zenodo.23574176][vdoi].
+
+[vdoi]: https://doi.org/10.5281/zenodo.23574176
+
+
 # daschlab 1.0.0 (2024-12-30)
 
 For DASCH Data Release 7, we are releasing *daschlab* version 1.0! There are not

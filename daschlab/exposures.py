@@ -56,7 +56,6 @@ from .apiclient import ApiClient
 from .series import SERIES, SeriesKind
 from .timeutil import dasch_time_as_isot, dasch_isots_as_time_array
 
-
 __all__ = ["Exposures", "ExposureReferenceType", "ExposureRow", "ExposureSelector"]
 
 
@@ -1290,18 +1289,30 @@ class Exposures(Table):
 def _query_exposures(
     client: ApiClient,
     center: SkyCoord,
+    midpoint_min: Optional[Time] = None,
+    midpoint_max: Optional[Time] = None,
 ) -> Exposures:
-    return _postproc_exposures(_get_exposure_cols(client, center))
+    return _postproc_exposures(
+        _get_exposure_cols(client, center, midpoint_min, midpoint_max)
+    )
 
 
 def _get_exposure_cols(
     client: ApiClient,
     center: SkyCoord,
+    midpoint_min: Optional[Time],
+    midpoint_max: Optional[Time],
 ) -> Exposures:
     payload = {
         "ra_deg": center.ra.deg,
         "dec_deg": center.dec.deg,
     }
+
+    if midpoint_min is not None:
+        payload["midpoint_min"] = midpoint_min.isot + "Z"
+
+    if midpoint_max is not None:
+        payload["midpoint_max"] = midpoint_max.isot + "Z"
 
     colnames = None
     coltypes = None

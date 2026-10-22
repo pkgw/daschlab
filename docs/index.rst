@@ -31,12 +31,12 @@ Virtually all subsequent analysis occurs through actions connected to an
 initialized `~daschlab.Session` instance.
 
 The version of *daschlab* described by this documentation has a DOI of
-`10.5281/zenodo.14574817`_. You can obtain the DOI of the version of
+`10.5281/zenodo.23574176`_. You can obtain the DOI of the version of
 *daschlab* that you are running via the `~daschlab.get_version_doi` function.
 This DOI should be reported in scholarly publications that made use of
 *daschlab*. See `How to Cite DASCH`_ for more information.
 
-.. _10.5281/zenodo.14574817: https://doi.org/10.5281/zenodo.14574817
+.. _10.5281/zenodo.23574176: https://doi.org/10.5281/zenodo.23574176
 
 .. _How to Cite DASCH: https://dasch.cfa.harvard.edu/citing/
 

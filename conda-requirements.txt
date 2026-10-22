@@ -2,12 +2,13 @@ astropy>=6
 bokeh>=3.1
 dataclasses-json>=0.6
 ipyevents
-ipykernel>=6
+ipykernel>=6,<7
 jupyterlab>=4
 jupyterlab_widgets
 nbclassic
 notebook
 numpy>=1.20
+pandas>=1.2
 pillow>=10
 pycairo>=1.20
 pywwt>=0.25

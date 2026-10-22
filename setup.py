@@ -34,7 +34,7 @@ project homepage].
 
 setup_args = dict(
     name="daschlab",  # cranko project-name
-    version="1.0.0",  # cranko project-version
+    version="1.1.0",  # cranko project-version
     description="DASCH data analysis",
     long_description=get_long_desc(),
     long_description_content_type="text/markdown",
@@ -49,8 +49,9 @@ setup_args = dict(
         "astropy>=6",
         "bokeh>=3.1",
         "dataclasses-json>=0.6",
-        "ipykernel>=6",
+        "ipykernel>=6,<7",  # needed until pywwt is fixed for ipykernel 7
         "numpy>=1.20",
+        "pandas>=1.2",
         "pillow>=10",
         "pycairo>=1.20",
         "pytz>=2024",
