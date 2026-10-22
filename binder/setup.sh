@@ -17,6 +17,7 @@ pip install \
   jupyterlab_widgets \
   nbclassic \
   notebook \
+  pandas \
   pillow \
   pywwt \
   requests \
