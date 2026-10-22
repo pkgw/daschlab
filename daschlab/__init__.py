@@ -1262,6 +1262,10 @@ def open_session(
         # ERFA thinks that our years are "dubious". Feh!
         warnings.simplefilter("ignore", astropy.utils.exceptions.ErfaWarning)
 
+        # Plant the citation seeds early
+        print(f"You are running daschlab {__version__}, DOI {get_version_doi()}.")
+        print("How to cite DASCH and daschlab: https://dasch.cfa.harvard.edu/citing/")
+
     if source:
         root = "daschlab_" + source_name_to_fs_name(source)
 
