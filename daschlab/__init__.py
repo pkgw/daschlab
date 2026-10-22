@@ -1292,7 +1292,11 @@ def open_session(
         _maybe_install_custom_exception_formatter()
 
         # ERFA thinks that our years are "dubious". Feh!
-        warnings.simplefilter("ignore", astropy.utils.exceptions.ErfaWarning)
+        try:
+            from erfa import ErfaWarning
+        except ImportError:
+            from astropy.utils.exceptions import ErfaWarning
+        warnings.simplefilter("ignore", ErfaWarning)
 
         # Plant the citation seeds early
         print(f"You are running daschlab {__version__}, DOI {get_version_doi()}.")
