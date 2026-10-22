@@ -47,6 +47,7 @@ from typing import Dict, FrozenSet, Iterable, Optional
 import warnings
 
 from astropy.coordinates import Angle, SkyCoord
+from astropy.time import Time
 from astropy import units as u
 import astropy.utils.exceptions
 import astropy.version
@@ -583,9 +584,22 @@ class Session:
         """
         return self.refcat()["refcat"][0]
 
-    def exposures(self) -> Exposures:
+    def exposures(
+        self,
+        midpoint_min: Optional[Time] = None,
+        midpoint_max: Optional[Time] = None,
+    ) -> Exposures:
         """
         Obtain the table of exposures overlapping the session target area.
+
+        Parameters
+        ==========
+        midpoint_min : optional `astropy.time.Time`, default None
+            Only return exposures with midpoint times that are not before this
+            time.
+        midpoint_max : optional `astropy.time.Time`, default None
+            Only return exposures with midpoint times that are not after this
+            time.
 
         Returns
         =======
@@ -597,10 +611,25 @@ class Session:
         before calling this method.
 
         The first time you call this method for a given session, it will perform
-        a DASCH API query to fetch information from the exposure database, saving
-        the resulting information in a file named ``exposures.ecsv``. Subsequent
-        calls (i.e., ones made with the ``exposures.ecsv`` file already existing)
-        will merely check for consistency and load the saved file.
+        a DASCH API query to fetch information from the exposure database,
+        saving the resulting information in a file named ``exposures.ecsv``.
+        Subsequent calls (i.e., ones made with the ``exposures.ecsv`` file
+        already existing) will merely check for consistency and load the saved
+        file.
+
+        If *midpoint_min* or *midpoint_max* is supplied, the returned exposure
+        list will be filtered to only include exposures with logged midpoint
+        times within the specified bounds. There are some exposures with logged
+        positional values (center RA/Dec) that do not have logged midpoint
+        times; they will be omitted from such searches. The filtering is only
+        based on the midpoint time, and does not factor in the duration of the
+        exposure, or the uncertainty in the midpoint time, which can be as much
+        as a whole day.
+
+        Since the exposure list is cached, if you query for exposures with
+        filtering active, the filtering will stay in effect for all subsequent
+        operations, unless you delete the cached ECSV file and reload your
+        session from scratch.
         """
 
         if self._exposures is not None:
@@ -616,7 +645,10 @@ class Session:
         t0 = time.time()
         print("- Querying API ...", flush=True)
         self._exposures = _query_exposures(
-            self._apiclient, self._query.pos_as_skycoord()
+            self._apiclient,
+            self._query.pos_as_skycoord(),
+            midpoint_min=midpoint_min,
+            midpoint_max=midpoint_max,
         )
         self._exposures.meta["daschlab_sess_key"] = str(self._root)
 
